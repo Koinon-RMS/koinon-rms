@@ -144,4 +144,39 @@ describe('useVerifyPickup / useRecordPickup', () => {
       queryKey: ['authorized-pickups', 'history'],
     });
   });
+
+  it('useRecordPickup forwards the kiosk supervisor session token to the api layer (#710)', async () => {
+    vi.mocked(api.recordPickup).mockResolvedValueOnce({ idKey: 'log1' } as never);
+    const { result } = renderHookWithQuery(() => useRecordPickup());
+    await act(async () => {
+      await result.current.mutateAsync({
+        attendanceIdKey: 'a1',
+        pickupPersonName: 'Unknown Person',
+        wasAuthorized: false,
+        supervisorOverride: true,
+        sessionToken: 'sess-token-1',
+      } as never);
+    });
+    // The hook must strip the sessionToken from the wire payload (identity is
+    // derived server-side from the header) and pass it as the second arg.
+    expect(api.recordPickup).toHaveBeenCalledWith(
+      expect.not.objectContaining({ sessionToken: expect.anything() }),
+      'sess-token-1'
+    );
+  });
+
+  it('useRecordPickup calls the api without a token when none is given (#710)', async () => {
+    vi.mocked(api.recordPickup).mockResolvedValueOnce({ idKey: 'log1' } as never);
+    const { result } = renderHookWithQuery(() => useRecordPickup());
+    await act(async () => {
+      await result.current.mutateAsync({
+        attendanceIdKey: 'a1',
+        wasAuthorized: true,
+        supervisorOverride: false,
+      } as never);
+    });
+    expect(api.recordPickup).toHaveBeenCalledWith(
+      expect.not.objectContaining({ sessionToken: expect.anything() })
+    );
+  });
 });
