@@ -351,6 +351,9 @@ public class DataSeeder
             Email = "john.smith@example.com",
             IsEmailActive = true,
             PasswordHash = await _authService.HashPasswordAsync("admin123"),
+            // Supervisor-mode PIN for the kiosk golden path (#710): verified by
+            // SupervisorModeService.ValidatePinAsync (Argon2id, Base64 salt||hash).
+            SupervisorPinHash = HashSupervisorPin("1234"),
             CreatedDateTime = now
         };
         people.Add(johnSmith);
@@ -548,6 +551,28 @@ public class DataSeeder
         // from the source Person Guid while remaining reproducible.
         bytes[0] ^= 0xA1;
         return new Guid(bytes);
+    }
+
+    /// <summary>
+    /// Hashes a supervisor PIN exactly as SupervisorModeService.ValidatePinAsync
+    /// verifies it (#710): Argon2id, 16-byte random salt, DegreeOfParallelism 8,
+    /// Iterations 4, MemorySize 256 MB, 32-byte hash, stored as Base64(salt || hash).
+    /// </summary>
+    private static string HashSupervisorPin(string pin)
+    {
+        var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+        using var argon2 = new Konscious.Security.Cryptography.Argon2id(System.Text.Encoding.UTF8.GetBytes(pin))
+        {
+            Salt = salt,
+            DegreeOfParallelism = 8,
+            Iterations = 4,
+            MemorySize = 256 * 1024
+        };
+        var hash = argon2.GetBytes(32);
+        var combined = new byte[salt.Length + hash.Length];
+        Buffer.BlockCopy(salt, 0, combined, 0, salt.Length);
+        Buffer.BlockCopy(hash, 0, combined, salt.Length, hash.Length);
+        return Convert.ToBase64String(combined);
     }
 
     private async Task SeedSecurityRolesAsync(List<Person> people, DateTime now, CancellationToken cancellationToken = default)
