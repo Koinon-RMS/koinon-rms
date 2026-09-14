@@ -225,7 +225,8 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
       await screen.findByText(/invalid security code or failed to verify/i),
     ).toBeInTheDocument();
     // Entry form is back for another attempt.
-    expect(screen.getByRole('button', { name: /verify authorization/i })).toBeEnabled();
+    expect(screen.getByLabelText(/security code/i)).toHaveValue('');
+    expect(screen.getByRole('button', { name: /verify authorization/i })).toBeDisabled();
   });
 
   it('record failure shows an error and stays on the result step', async () => {
@@ -252,10 +253,11 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
 
     expect(
       screen.getByRole('button', { name: /verify authorization/i }),
-    ).toBeEnabled();
+    ).toBeDisabled();
     expect(
       screen.getByLabelText(/who is picking up/i),
     ).toHaveValue('');
+    expect(screen.getByLabelText(/security code/i)).toHaveValue('');
   });
 
   it('Cancel propagates to the parent flow', async () => {
