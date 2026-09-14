@@ -156,23 +156,26 @@ test.describe('#710 level-2 (mocked API)', () => {
     await page.getByRole('button', { name: 'Check Out' }).first().click();
   }
 
-  test('forwards X-Supervisor-Session on the record-pickup call', async ({ page }) => {
+  test('forwards X-Supervisor-Session on an override record-pickup', async ({ page }) => {
     await page.route('**/api/v1/checkin/verify-pickup', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           data: {
-            isAuthorized: true,
-            authorizationLevel: 'Authorized',
-            matchType: 'SecurityCode',
-            requiresSupervisorOverride: false,
+            isAuthorized: false,
+            authorizationLevel: undefined,
+            authorizedPickupIdKey: undefined,
+            message: 'Person not on authorized pickup list. Supervisor approval required.',
+            requiresSupervisorOverride: true,
           },
         }),
       });
     });
 
+    let recordPickupBody: string | null = null;
     await page.route('**/api/v1/checkin/record-pickup', async (route) => {
+      recordPickupBody = route.request().postData();
       recordPickupRequests.push({
         url: route.request().url(),
         headers: await route.request().allHeaders(),
@@ -197,16 +200,18 @@ test.describe('#710 level-2 (mocked API)', () => {
     await page.getByPlaceholder('Enter code').fill('AB12');
     await page.getByPlaceholder('Enter name').fill('Jane Smith');
     await page.getByRole('button', { name: 'Verify Authorization' }).click();
-    await expect(page.getByText('Authorized')).toBeVisible({ timeout: 5000 });
-
+    await page.getByLabel(/supervisor override/i).check();
     await page.getByRole('button', { name: /complete checkout/i }).click();
     await expect(page.getByText('Checkout Complete!')).toBeVisible({ timeout: 5000 });
 
-    // #710 contract: the write carries the supervisor session the PIN
-    // login returned — the audit trail must name the supervisor.
+    // #710 contract: the override write carries the supervisor session the
+    // PIN login returned — the audit trail must name the supervisor — and
+    // flags itself as a supervisor override.
     expect(recordPickupRequests.length).toBeGreaterThanOrEqual(1);
     const session = recordPickupRequests[0]?.headers['x-supervisor-session'];
     expect(session).toBe('test-supervisor-token-123');
+    const payload = recordPickupBody ? JSON.parse(recordPickupBody) : {};
+    expect(payload.supervisorOverride).toBe(true);
   });
 
   test('AuthorizationLevel.Never guardian: no write is issued and an error is shown', async ({ page }) => {
