@@ -38,9 +38,7 @@ public class PickupControllerTests
         _loggerMock = new Mock<ILogger<PickupController>>();
 
         // Setup controller with regular user (CheckInVolunteer role)
-        _controller = new PickupController(
-            _authorizedPickupServiceMock.Object,
-            _loggerMock.Object);
+        _controller = CreateController();
 
         var regularClaims = new List<Claim>
         {
@@ -61,9 +59,7 @@ public class PickupControllerTests
         };
 
         // Setup controller with supervisor user
-        _supervisorController = new PickupController(
-            _authorizedPickupServiceMock.Object,
-            _loggerMock.Object);
+        _supervisorController = CreateController();
 
         var supervisorClaims = new List<Claim>
         {
@@ -290,11 +286,22 @@ public class PickupControllerTests
         okResult.Value.Should().NotBeNull();
     }
 
+    private PickupController CreateController()
+    {
+        var ctor = typeof(PickupController).GetConstructors().Single();
+        var args = ctor.GetParameters().Select(p => p.ParameterType switch
+        {
+            var t when t == typeof(IAuthorizedPickupService) => (object)_authorizedPickupServiceMock.Object,
+            var t when t == typeof(ISupervisorModeService) => _supervisorModeServiceMock.Object,
+            var t when t == typeof(ILogger<PickupController>) => _loggerMock.Object,
+            var t => throw new InvalidOperationException($"PickupControllerTests cannot supply constructor parameter of type {t.FullName}"),
+        }).ToArray();
+        return (PickupController)ctor.Invoke(args);
+    }
+
     private PickupController CreateKioskController(string? sessionToken)
     {
-        var controller = new PickupController(
-            _authorizedPickupServiceMock.Object,
-            _loggerMock.Object);
+        var controller = CreateController();
 
         var httpContext = new DefaultHttpContext
         {
