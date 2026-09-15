@@ -11,6 +11,8 @@
     <ProjectReference Include="../../src/Koinon.Domain/Koinon.Domain.csproj" />
     <ProjectReference Include="../../src/Koinon.Application/Koinon.Application.csproj" />
     <ProjectReference Include="../../src/Koinon.Infrastructure/Koinon.Infrastructure.csproj" />
+    <!-- #710 seeder persistence tests invoke the production DataSeeder directly -->
+    <ProjectReference Include="../../tools/Koinon.TestDataSeeder/Koinon.TestDataSeeder.csproj" />
   </ItemGroup>
 
   <!-- Testing packages -->

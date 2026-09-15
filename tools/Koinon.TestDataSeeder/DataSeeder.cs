@@ -423,6 +423,12 @@ public class DataSeeder
         // Save Johnson family so we have its ID for members
         await _context.SaveChangesAsync(cancellationToken);
 
+        // #710: Jane Smith is always authorized to pick up Johnny — the kiosk
+        // e2e golden path expects an AUTHORIZED verify result for this pair.
+        // Extracted into SeedAuthorizedPickupAsync so the insert is guarded and
+        // repeatable instead of relying on one-time inline seeding.
+        await SeedAuthorizedPickupAsync(now, cancellationToken);
+
         // Bob Johnson (Adult)
         var bobJohnson = new Person
         {
@@ -493,6 +499,81 @@ public class DataSeeder
         await _context.SaveChangesAsync(cancellationToken);
 
         return people;
+    }
+
+    /// <summary>
+    /// Seeds the #710 authorized pickup: Jane Smith is always authorized to
+    /// pick up Johnny. Resolves both people by their fixed seeder GUIDs and
+    /// inserts the Parent/Always row only when the pair has no authorization
+    /// yet, so repeating the seeder against the same database never creates a
+    /// duplicate (and an existing revoked row is never resurrected).
+    /// </summary>
+    public async Task SeedAuthorizedPickupAsync(DateTime now, CancellationToken cancellationToken = default)
+    {
+        var janeSmith = await _context.People
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Guid == _janeSmithGuid, cancellationToken);
+        if (janeSmith is null)
+        {
+            _logger.LogWarning(
+                "SeedAuthorizedPickupAsync: Jane Smith ({Guid}) not found; skipping authorized-pickup seeding.",
+                _janeSmithGuid);
+            return;
+        }
+
+        var johnnySmith = await _context.People
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Guid == _johnnySmithGuid, cancellationToken);
+        if (johnnySmith is null)
+        {
+            _logger.LogWarning(
+                "SeedAuthorizedPickupAsync: Johnny Smith ({Guid}) not found; skipping authorized-pickup seeding.",
+                _johnnySmithGuid);
+            return;
+        }
+
+        var existing = await _context.AuthorizedPickups
+            .AsNoTracking()
+            .FirstOrDefaultAsync(ap =>
+                ap.ChildPersonId == johnnySmith.Id &&
+                ap.AuthorizedPersonId == janeSmith.Id &&
+                ap.Relationship == PickupRelationship.Parent &&
+                ap.AuthorizationLevel == AuthorizationLevel.Always,
+                cancellationToken);
+        if (existing is not null)
+        {
+            _logger.LogInformation(
+                "SeedAuthorizedPickupAsync: Parent/Always authorization for Jane -> Johnny already exists (id {Id}, active {IsActive}); skipping insert.",
+                existing.Id,
+                existing.IsActive);
+            return;
+        }
+
+        // EF Core 8 omits enum properties whose value equals the CLR-default
+        // sentinel (0) from the INSERT when the column carries a database
+        // default. The migration defaults relationship to Other (7)
+        // (defaultValue: 7, migration 20251208151510), so an initializer-set
+        // Parent (0) persists as Other, and neither the IsModified nor the
+        // CurrentValue workaround sticks for Added entities on EF 8.0.0
+        // (verified empirically). Persist the row with non-zero placeholder
+        // values first, then set the real values — the second save issues the
+        // corrective UPDATE, to which sentinel suppression does not apply.
+        var pickup = new AuthorizedPickup
+        {
+            ChildPersonId = johnnySmith.Id,
+            AuthorizedPersonId = janeSmith.Id,
+            Relationship = PickupRelationship.Other,
+            AuthorizationLevel = AuthorizationLevel.EmergencyOnly,
+            IsActive = true,
+            CreatedDateTime = now
+        };
+        _context.AuthorizedPickups.Add(pickup);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        pickup.Relationship = PickupRelationship.Parent;
+        pickup.AuthorizationLevel = AuthorizationLevel.Always;
+        await _context.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("SeedAuthorizedPickupAsync: seeded Parent/Always authorization Jane -> Johnny.");
     }
 
     /// <summary>
