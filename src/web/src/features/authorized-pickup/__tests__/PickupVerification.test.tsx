@@ -37,6 +37,7 @@ vi.mock('../hooks', () => ({
 // renders WITHOUT any auth provider to pin that.
 import { PickupVerification } from '../PickupVerification';
 import { AuthorizationLevel } from '../api';
+import { ApiClientError } from '@/services/api/client';
 
 const authorizedResult = {
   isAuthorized: true,
@@ -60,6 +61,14 @@ const neverResult = {
   authorizedPickupIdKey: 'ap2',
   message: 'This person is not authorized to pick up this child.',
   requiresSupervisorOverride: false,
+};
+
+const emergencyResult = {
+  isAuthorized: false,
+  authorizationLevel: AuthorizationLevel.EmergencyOnly,
+  authorizedPickupIdKey: 'ap3',
+  message: 'Emergency-only authorization. Supervisor approval required.',
+  requiresSupervisorOverride: true,
 };
 
 function renderAtKiosk(props: Partial<Parameters<typeof PickupVerification>[0]> = {}) {
@@ -121,7 +130,9 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
 
     await submitVerify(user);
 
-    expect(await screen.findByText(/authorized/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /^authorized$/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /complete checkout/i })).toBeEnabled();
     // No supervisor override affordance for an authorized guardian.
     expect(
@@ -204,7 +215,9 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
 
     await submitVerify(user);
 
-    expect(await screen.findByText(/not authorized/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /not authorized/i }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByLabelText(/supervisor override/i),
     ).not.toBeInTheDocument();
@@ -267,5 +280,123 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('EmergencyOnly result requires the override checkbox and a kiosk session token on record', async () => {
+    const user = userEvent.setup();
+    mockVerifyMutate.mockResolvedValueOnce(emergencyResult);
+    mockRecordMutate.mockResolvedValueOnce({ idKey: 'log3' });
+    renderAtKiosk({ sessionToken: 'sess-token-2' });
+
+    await submitVerify(user);
+
+    expect(await screen.findByText(/emergency-only authorization/i)).toBeInTheDocument();
+    const complete = screen.getByRole('button', { name: /complete checkout/i });
+    expect(complete).toBeDisabled();
+
+    await user.click(screen.getByLabelText(/supervisor override/i));
+    expect(screen.getByRole('button', { name: /complete checkout/i })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: /complete checkout/i }));
+
+    await screen.findByText(/complete checkout/i);
+    expect(mockRecordMutate).toHaveBeenCalledTimes(1);
+    const payload = mockRecordMutate.mock.calls[0][0];
+    expect(payload).toMatchObject({
+      attendanceIdKey: 'att1',
+      pickupPersonName: 'Sarah Smith',
+      wasAuthorized: false,
+      supervisorOverride: true,
+    });
+    expect(payload.sessionToken).toBe('sess-token-2');
+    expect(payload).not.toHaveProperty('supervisorPersonIdKey');
+  });
+
+  it('override checkbox exists but recording refuses without a validated kiosk session', async () => {
+    const user = userEvent.setup();
+    mockVerifyMutate.mockResolvedValueOnce(overrideResult);
+    renderAtKiosk({ sessionToken: undefined });
+
+    await submitVerify(user);
+
+    await screen.findByRole('heading', { name: /supervisor approval required/i });
+    await user.click(screen.getByLabelText(/supervisor override/i));
+    await user.click(screen.getByRole('button', { name: /complete checkout/i }));
+
+    expect(
+      await screen.findByText(/no kiosk supervisor session/i),
+    ).toBeInTheDocument();
+    expect(mockRecordMutate).not.toHaveBeenCalled();
+  });
+
+  it('expired kiosk session (401) on verify shows the re-authenticate message and clears the code', async () => {
+    const user = userEvent.setup();
+    mockVerifyMutate.mockRejectedValueOnce(
+      new ApiClientError(
+        401,
+        { title: 'Unauthorized', status: 401, detail: 'Kiosk supervisor session has expired.' },
+        'problemDetails',
+      ),
+    );
+    renderAtKiosk({ sessionToken: 'stale-token' });
+
+    await submitVerify(user);
+
+    expect(
+      await screen.findByText(/kiosk supervisor session has expired/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/security code/i)).toHaveValue('');
+  });
+
+  it('expired kiosk session (401) on record shows the re-authenticate message and stays on the result step', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    mockVerifyMutate.mockResolvedValueOnce(authorizedResult);
+    mockRecordMutate.mockRejectedValueOnce(
+      new ApiClientError(
+        401,
+        { title: 'Unauthorized', status: 401, detail: 'Kiosk supervisor session has expired.' },
+        'problemDetails',
+      ),
+    );
+    renderAtKiosk({ onSuccess });
+
+    await submitVerify(user);
+    await user.click(await screen.findByRole('button', { name: /complete checkout/i }));
+
+    expect(
+      await screen.findByText(/kiosk supervisor session has expired/i),
+    ).toBeInTheDocument();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /complete checkout/i })).toBeInTheDocument();
+  });
+
+  it('Enter in the name field submits verify; duplicate submit is blocked while in flight', async () => {
+    const user = userEvent.setup();
+    // Hold the first verify open: an unresolved promise simulates latency so a
+    // second submit attempt inside the window would double-call the mutation.
+    let resolveFirst!: (v: typeof authorizedResult) => void;
+    mockVerifyMutate.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+    renderAtKiosk();
+
+    const code = screen.getByLabelText(/security code/i);
+    const name = screen.getByLabelText(/who is picking up/i);
+    await user.type(code, '4321');
+    await user.type(name, 'Sarah Smith{Enter}');
+
+    expect(mockVerifyMutate).toHaveBeenCalledTimes(1);
+    // The in-flight state is visible as the disabled Verify button (the
+    // spec's hook mock is static, so the label swap can't be observed).
+    expect(screen.getByRole('button', { name: /verify authorization/i })).toBeDisabled();
+
+    await user.type(name, '{Enter}');
+    expect(mockVerifyMutate).toHaveBeenCalledTimes(1); // in-flight submit blocked
+
+    resolveFirst(authorizedResult);
+    expect(
+      await screen.findByRole('heading', { name: /^authorized$/i }),
+    ).toBeInTheDocument();
   });
 });
