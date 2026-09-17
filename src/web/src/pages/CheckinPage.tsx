@@ -427,6 +427,11 @@ export function CheckinPage() {
     await checkout(attendanceIdKey);
   };
 
+  const handlePickupRecorded = () => {
+    supervisorMode.resetTimeout();
+    void supervisorAttendanceQuery.refetch();
+  };
+
   const handleSupervisorExit = async () => {
     if (supervisorMode.sessionToken) {
       try {
@@ -877,7 +882,9 @@ export function CheckinPage() {
               currentAttendance={supervisorAttendanceQuery.data ?? []}
               onReprint={handleSupervisorReprint}
               onCheckout={handleSupervisorCheckout}
+              onPickupRecorded={handlePickupRecorded}
               onExit={handleSupervisorExit}
+              sessionToken={supervisorMode.sessionToken ?? undefined}
               printLabel={printerAvailable ? handlePrintLabels : undefined}
             />
           </div>
