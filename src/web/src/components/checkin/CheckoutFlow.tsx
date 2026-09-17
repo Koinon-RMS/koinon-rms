@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Button, Card } from '@/components/ui';
-import { SecurityCodeVerify } from './SecurityCodeVerify';
+import { PickupVerification } from '@/features/authorized-pickup/PickupVerification';
 import type { AttendanceResultDto } from '@/services/api/types';
 
 export interface CheckoutFlowProps {
   currentAttendance: AttendanceResultDto[];
   onCheckout: (attendanceIdKey: string) => Promise<void>;
+  sessionToken?: string;
+  onPickupRecorded?: (attendanceIdKey: string) => void;
 }
 
 type CheckoutStep = 'list' | 'verify' | 'success';
@@ -20,14 +22,17 @@ interface SelectedAttendance {
 
 /**
  * Checkout flow for recording when children leave
- * Requires security code verification before checkout
+ * Verifies each checkout through the authorized-pickup flow (#710)
  */
-export function CheckoutFlow({ currentAttendance, onCheckout }: CheckoutFlowProps) {
+export function CheckoutFlow({
+  currentAttendance,
+  sessionToken,
+  onPickupRecorded,
+}: CheckoutFlowProps) {
   const [step, setStep] = useState<CheckoutStep>('list');
   const [selectedAttendance, setSelectedAttendance] = useState<SelectedAttendance | null>(null);
   const [checkedOutName, setCheckedOutName] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Filter attendance by search query
@@ -53,24 +58,13 @@ export function CheckoutFlow({ currentAttendance, onCheckout }: CheckoutFlowProp
     setError(null);
   };
 
-  const handleVerified = async () => {
+  const handlePickupVerified = () => {
     if (!selectedAttendance) return;
 
-    setCheckingOut(true);
-    setError(null);
-
-    try {
-      await onCheckout(selectedAttendance.attendanceIdKey);
-      // Store name before clearing selectedAttendance
-      setCheckedOutName(selectedAttendance.personName);
-      setStep('success');
-    } catch {
-      setError('Failed to record checkout. Please try again.');
-      setStep('list');
-    } finally {
-      setCheckingOut(false);
-      setSelectedAttendance(null);
-    }
+    // Store the child's name for the success step before moving on
+    setCheckedOutName(selectedAttendance.personName);
+    onPickupRecorded?.(selectedAttendance.attendanceIdKey);
+    setStep('success');
   };
 
   const handleCancel = () => {
@@ -193,15 +187,15 @@ export function CheckoutFlow({ currentAttendance, onCheckout }: CheckoutFlowProp
     );
   }
 
-  // Verify step - enter security code
+  // Verify step - authorized pickup verification
   if (step === 'verify' && selectedAttendance) {
     return (
-      <SecurityCodeVerify
-        expectedCode={selectedAttendance.securityCode}
-        personName={selectedAttendance.personName}
-        onVerified={handleVerified}
+      <PickupVerification
+        attendanceIdKey={selectedAttendance.attendanceIdKey}
+        childName={selectedAttendance.personName}
+        sessionToken={sessionToken}
+        onSuccess={handlePickupVerified}
         onCancel={handleCancel}
-        loading={checkingOut}
       />
     );
   }
