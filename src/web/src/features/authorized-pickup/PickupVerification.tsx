@@ -1,19 +1,32 @@
 /**
- * Pickup Verification Component
- * Used during checkout to verify authorized pickup persons
+ * Pickup Verification Component — kiosk checkout verification step (#710).
+ *
+ * Runs at an anonymous kiosk: no auth context exists there, so this component
+ * never reads useAuth. Supervisor authority arrives only as a validated
+ * session token via the `sessionToken` prop (forwarded by the parent flow and
+ * sent as the X-Supervisor-Session header by the API layer); the client never
+ * sends or forges a supervisor identity field. Overrides require that
+ * validated session; AuthorizationLevel.Never is a hard deny with no override
+ * affordance and no Complete button.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useVerifyPickup, useRecordPickup } from './hooks';
-import { AuthorizationLevel, type VerifyPickupRequest } from './api';
+import { ApiClientError } from '@/services/api/client';
+import { AuthorizationLevel, type RecordPickupRequest, type VerifyPickupRequest } from './api';
 import type { IdKey } from '@/services/api/types';
-import { useAuth } from '@/hooks/useAuth';
 
 export interface PickupVerificationProps {
   attendanceIdKey: IdKey;
   childName: string;
   onSuccess: () => void;
   onCancel: () => void;
+  /**
+   * Validated kiosk supervisor session token from the parent flow. Required
+   * only to record an override; absence simply disables that path — the
+   * client never fabricates supervisor authority.
+   */
+  sessionToken?: string;
 }
 
 export function PickupVerification({
@@ -21,11 +34,21 @@ export function PickupVerification({
   childName,
   onSuccess,
   onCancel,
+  sessionToken,
 }: PickupVerificationProps) {
   const [pickupPersonName, setPickupPersonName] = useState('');
   const [supervisorOverride, setSupervisorOverride] = useState(false);
   const [enteredSecurityCode, setEnteredSecurityCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // True while a verify or record mutation is in flight. A ref keeps the
+  // submit handlers synchronous, so a second click / Enter keypress during
+  // the request cannot start a duplicate submission (#710 kiosk anti-double-tap).
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
+  const setSubmitting = (busy: boolean) => {
+    isSubmittingRef.current = busy;
+    setIsSubmitting(busy);
+  };
   const [verificationResult, setVerificationResult] = useState<{
     isAuthorized: boolean;
     authorizationLevel?: AuthorizationLevel;
@@ -34,16 +57,26 @@ export function PickupVerification({
     requiresSupervisorOverride: boolean;
   } | undefined>(undefined);
 
-  const { user } = useAuth();
   const verifyPickup = useVerifyPickup();
   const recordPickup = useRecordPickup();
 
+  const isHardDeny =
+    !!verificationResult &&
+    !verificationResult.isAuthorized &&
+    verificationResult.authorizationLevel === AuthorizationLevel.Never;
+
   const handleVerify = async () => {
-    if (!pickupPersonName.trim() || !enteredSecurityCode.trim()) {
+    if (
+      !pickupPersonName.trim() ||
+      !enteredSecurityCode.trim() ||
+      isSubmittingRef.current ||
+      verifyPickup.isPending
+    ) {
       return;
     }
 
     setError(null);
+    setSubmitting(true);
 
     const request: VerifyPickupRequest = {
       attendanceIdKey,
@@ -55,13 +88,21 @@ export function PickupVerification({
       const result = await verifyPickup.mutateAsync(request);
       setVerificationResult(result);
     } catch (error) {
-      setError('Invalid security code or failed to verify pickup. Please try again.');
+      setError(
+        error instanceof ApiClientError && error.statusCode === 401
+          ? 'Kiosk supervisor session has expired. Please re-authenticate at the kiosk.'
+          : 'Invalid security code or failed to verify pickup. Please try again.'
+      );
       setEnteredSecurityCode('');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleRecordPickup = async () => {
-    if (!verificationResult) return;
+    if (!verificationResult || isSubmittingRef.current || recordPickup.isPending) {
+      return;
+    }
 
     // If requires supervisor override and not provided
     if (
@@ -71,28 +112,67 @@ export function PickupVerification({
       return;
     }
 
-    setError(null);
+    // Never-level denials are recorded by no one: hard block, no exceptions.
+    if (isHardDeny) {
+      return;
+    }
 
-    try {
-      await recordPickup.mutateAsync({
+    // An override requires a validated kiosk supervisor session. Without one
+    // the client has no authority to override — refuse rather than forge.
+    if (supervisorOverride && !sessionToken) {
+      setError(
+        'No kiosk supervisor session. A supervisor must authenticate at the kiosk before overriding.'
+      );
+      return;
+    }
+
+    setError(null);
+    setSubmitting(true);
+
+    // Non-override path: NO sessionToken key at all — an explicit undefined
+    // key still lands on the object; the #710 ruling is that the tokenless
+    // payload must not carry the field. The widened variable type matches
+    // useRecordPickup's mutation variables (request + separate sessionToken).
+    let recordRequest: RecordPickupRequest & { sessionToken?: string };
+    if (supervisorOverride && sessionToken) {
+      recordRequest = {
         attendanceIdKey,
         pickupPersonName,
         wasAuthorized: verificationResult.isAuthorized,
         authorizedPickupIdKey: verificationResult.authorizedPickupIdKey,
         supervisorOverride,
-        supervisorPersonIdKey: supervisorOverride && user ? user.idKey : undefined,
-        notes: supervisorOverride ? `Supervisor override by ${user?.email}` : undefined,
-      });
+        sessionToken,
+        notes: 'Supervisor override recorded at kiosk.',
+      };
+    } else {
+      recordRequest = {
+        attendanceIdKey,
+        pickupPersonName,
+        wasAuthorized: verificationResult.isAuthorized,
+        authorizedPickupIdKey: verificationResult.authorizedPickupIdKey,
+        supervisorOverride,
+      };
+    }
+
+    try {
+      await recordPickup.mutateAsync(recordRequest);
 
       onSuccess();
     } catch (error) {
-      setError('Failed to record pickup. Please try again.');
+      if (error instanceof ApiClientError && error.statusCode === 401) {
+        setError('Kiosk supervisor session has expired. Please re-authenticate at the kiosk.');
+      } else {
+        setError('Failed to record pickup. Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  // Override affordance exists only when the backend explicitly requires one.
+  // AuthorizationLevel.Never is a hard deny: no checkbox, no Complete.
   const showSupervisorOverride =
-    verificationResult &&
-    (verificationResult.requiresSupervisorOverride || !verificationResult.isAuthorized);
+    !!verificationResult && verificationResult.requiresSupervisorOverride;
 
   return (
     <div className="bg-white shadow sm:rounded-lg">
@@ -141,8 +221,9 @@ export function PickupVerification({
                   setPickupPersonName(e.target.value);
                   setError(null);
                 }}
-                onKeyPress={(e) => {
+                onKeyDown={(e) => {
                   if (e.key === 'Enter') {
+                    e.preventDefault();
                     handleVerify();
                   }
                 }}
@@ -155,7 +236,12 @@ export function PickupVerification({
               <button
                 type="button"
                 onClick={handleVerify}
-                disabled={!pickupPersonName.trim() || !enteredSecurityCode.trim() || verifyPickup.isPending}
+                disabled={
+                  !pickupPersonName.trim() ||
+                  !enteredSecurityCode.trim() ||
+                  isSubmitting ||
+                  verifyPickup.isPending
+                }
                 className="flex-1 inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {verifyPickup.isPending ? (
@@ -300,7 +386,8 @@ export function PickupVerification({
               </div>
             )}
 
-            {/* Supervisor Override Section */}
+            {/* Supervisor Override Section — only for results the backend
+                flagged as overridable; Never (hard deny) never reaches here */}
             {showSupervisorOverride && (
               <div className="border-t pt-4">
                 <label className="flex items-center mb-3">
@@ -311,7 +398,9 @@ export function PickupVerification({
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
                   <span className="ml-2 text-sm font-medium text-gray-700">
-                    Supervisor Override (requires Supervisor role)
+                    {sessionToken
+                      ? 'Supervisor Override (validated kiosk session)'
+                      : 'Supervisor Override (requires Supervisor role)'}
                   </span>
                 </label>
               </div>
@@ -319,10 +408,12 @@ export function PickupVerification({
 
             {/* Action buttons */}
             <div className="flex gap-3 pt-4">
+              {!isHardDeny && (
               <button
                 type="button"
                 onClick={handleRecordPickup}
                 disabled={
+                  isSubmitting ||
                   recordPickup.isPending ||
                   (showSupervisorOverride && !supervisorOverride)
                 }
@@ -355,6 +446,7 @@ export function PickupVerification({
                   'Complete Checkout'
                 )}
               </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
