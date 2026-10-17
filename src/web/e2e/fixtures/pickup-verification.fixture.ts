@@ -112,3 +112,37 @@ export async function removeNameBasedPickupAuthorizations(): Promise<void> {
     );
   });
 }
+
+/**
+ * Ends, for the seeded child Johnny Smith only, every attendance row that is
+ * still open (end_date_time IS NULL) and was started at or after the given
+ * timestamp, by setting its end time to now(). Playwright runs this spec
+ * under both the chromium and kiosk projects with fullyParallel and one
+ * worker, so the four journey runs have no fixed order: each journey checks
+ * Johnny in, and a journey whose attendance stays open makes every later
+ * check-in fail as "already checked in". The spec records the timestamp at
+ * the start of each test and closes that test's own attendance here.
+ *
+ * Scoping mirrors the EF Core mappings (AttendanceConfiguration /
+ * PersonAliasConfiguration): attendance rows are reached through
+ * person_alias (attendance.person_alias_id = person_alias.id,
+ * person_alias.person_id = Johnny's person.id), so only rows belonging to
+ * one of Johnny's aliases can match — no other person's attendance is ever
+ * touched, and neither is any attendance started before the timestamp
+ * (e.g. older seeded rows), open or not.
+ */
+export async function endSeededChildOpenAttendances(startedAtOrLater: Date): Promise<void> {
+  await withClient(async (client) => {
+    const childId = await resolveSeededChildId(client);
+    await client.query(
+      `UPDATE attendance a
+         SET end_date_time = now()
+        FROM person_alias pa
+       WHERE a.person_alias_id = pa.id
+         AND pa.person_id = $1
+         AND a.end_date_time IS NULL
+         AND a.start_date_time >= $2`,
+      [childId, startedAtOrLater]
+    );
+  });
+}

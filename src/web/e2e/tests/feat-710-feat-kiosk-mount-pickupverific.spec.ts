@@ -25,13 +25,22 @@ import {
   AUTHORIZED_PICKUP_NAME,
   AUTHORIZATION_LEVEL,
   NEVER_PICKUP_NAME,
+  endSeededChildOpenAttendances,
   removeNameBasedPickupAuthorizations,
   seedNameBasedPickupAuthorization,
 } from '../fixtures/pickup-verification.fixture';
 
 test.describe('#710 kiosk pickup journeys — real stack', () => {
+  // Recorded at the start of each test: playwright.config.ts runs this spec
+  // under both the chromium and kiosk projects with fullyParallel and one
+  // worker, so journey order is not fixed and each journey must close the
+  // attendance it opened or a later journey's check-in is refused as already
+  // checked in.
+  let journeyStartedAt = new Date();
+
   // The fixtures remove only their own rows, even when a journey fails midway.
   test.afterEach(async () => {
+    await endSeededChildOpenAttendances(journeyStartedAt);
     await removeNameBasedPickupAuthorizations();
   });
 
@@ -74,6 +83,7 @@ test.describe('#710 kiosk pickup journeys — real stack', () => {
   }
 
   test('authorized pickup completes at the kiosk', async ({ page }) => {
+    journeyStartedAt = new Date();
     await seedNameBasedPickupAuthorization({
       name: AUTHORIZED_PICKUP_NAME,
       authorizationLevel: AUTHORIZATION_LEVEL.Always,
@@ -90,6 +100,7 @@ test.describe('#710 kiosk pickup journeys — real stack', () => {
   });
 
   test('never-authorized pickup is denied at the kiosk', async ({ page }) => {
+    journeyStartedAt = new Date();
     await seedNameBasedPickupAuthorization({
       name: NEVER_PICKUP_NAME,
       authorizationLevel: AUTHORIZATION_LEVEL.Never,
@@ -102,7 +113,10 @@ test.describe('#710 kiosk pickup journeys — real stack', () => {
     await page.getByRole('button', { name: 'Verify Authorization' }).click();
 
     // Hard deny: a visible refusal, no Complete affordance, no success screen.
-    await expect(page.getByText('Not Authorized')).toBeVisible({ timeout: 5000 });
+    // Role-scoped so only the result heading matches, not the denial message.
+    await expect(
+      page.getByRole('heading', { name: 'Not Authorized' })
+    ).toBeVisible({ timeout: 5000 });
     await expect(page.getByRole('button', { name: /complete checkout/i })).toHaveCount(0);
     await expect(page.getByText('Checkout Complete!')).not.toBeVisible();
   });
