@@ -63,6 +63,16 @@ const neverResult = {
   requiresSupervisorOverride: false,
 };
 
+// Failed verification: invalid security code (or attendance not found) —
+// unauthorized with no level and nothing to override. Not recordable.
+const invalidCodeResult = {
+  isAuthorized: false,
+  authorizationLevel: undefined,
+  authorizedPickupIdKey: undefined,
+  message: 'Invalid security code.',
+  requiresSupervisorOverride: false,
+};
+
 const emergencyResult = {
   isAuthorized: false,
   authorizationLevel: AuthorizationLevel.EmergencyOnly,
@@ -211,6 +221,25 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
   it('AuthorizationLevel.Never shows no override and no Complete button', async () => {
     const user = userEvent.setup();
     mockVerifyMutate.mockResolvedValueOnce(neverResult);
+    renderAtKiosk();
+
+    await submitVerify(user);
+
+    expect(
+      await screen.findByRole('heading', { name: /not authorized/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/supervisor override/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /complete checkout/i }),
+    ).not.toBeInTheDocument();
+    expect(mockRecordMutate).not.toHaveBeenCalled();
+  });
+
+  it('a failed verification (invalid code, no level) shows Not Authorized with no override and no Complete button', async () => {
+    const user = userEvent.setup();
+    mockVerifyMutate.mockResolvedValueOnce(invalidCodeResult);
     renderAtKiosk();
 
     await submitVerify(user);

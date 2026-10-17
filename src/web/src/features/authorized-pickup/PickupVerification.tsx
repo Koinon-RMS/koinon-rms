@@ -65,6 +65,15 @@ export function PickupVerification({
     !verificationResult.isAuthorized &&
     verificationResult.authorizationLevel === AuthorizationLevel.Never;
 
+  // Complete is offered only for results the kiosk can act on: an authorized
+  // guardian, or an unauthorized-but-overridable one. A failed verification
+  // (invalid code, attendance not found: isAuthorized=false, no level, no
+  // override) must not post wasAuthorized=false/supervisorOverride=false —
+  // the server rejects that combination with a 500.
+  const canComplete =
+    !!verificationResult &&
+    (verificationResult.isAuthorized || verificationResult.requiresSupervisorOverride);
+
   const handleVerify = async () => {
     if (
       !pickupPersonName.trim() ||
@@ -114,6 +123,12 @@ export function PickupVerification({
 
     // Never-level denials are recorded by no one: hard block, no exceptions.
     if (isHardDeny) {
+      return;
+    }
+
+    // A result that is neither authorized nor overridable cannot be recorded
+    // (same refusal the missing Complete button already expresses).
+    if (!canComplete) {
       return;
     }
 
@@ -408,7 +423,7 @@ export function PickupVerification({
 
             {/* Action buttons */}
             <div className="flex gap-3 pt-4">
-              {!isHardDeny && (
+              {canComplete && (
               <button
                 type="button"
                 onClick={handleRecordPickup}
