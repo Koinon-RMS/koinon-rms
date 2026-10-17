@@ -751,6 +751,48 @@ public class AuthorizedPickupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RecordPickupAsync_WhenNoTrackingDefault_PersistsEndDateTime()
+    {
+        // Arrange
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+
+        var authorizedPickup = new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        };
+        _context.AuthorizedPickups.Add(authorizedPickup);
+        await _context.SaveChangesAsync();
+
+        // Mirror the production default (PostgreSqlProvider.UseQueryTrackingBehavior)
+        _context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: authorizedPerson.IdKey,
+            PickupPersonName: null,
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: authorizedPickup.IdKey,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: "Normal pickup"
+        );
+
+        // Act
+        await _service.RecordPickupAsync(request);
+
+        // Assert — re-read from the store with a fresh no-tracking query so we
+        // observe what was persisted, not a cached change-tracker instance
+        var storedAttendance = await _context.Attendances
+            .AsNoTracking()
+            .FirstAsync(a => a.Id == attendance.Id);
+        Assert.NotNull(storedAttendance.EndDateTime);
+    }
+
+    [Fact]
     public async Task AddAuthorizedPickupAsync_WithValidData_CreatesPickup()
     {
         // Arrange

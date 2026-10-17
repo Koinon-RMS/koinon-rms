@@ -736,6 +736,7 @@ public class AuthorizedPickupService(
         CancellationToken ct)
     {
         return await context.Attendances
+            .AsTracking()
             .Include(a => a.PersonAlias)
             .ThenInclude(pa => pa!.Person)
             .FirstOrDefaultAsync(a => a.Id == attendanceId, ct);
