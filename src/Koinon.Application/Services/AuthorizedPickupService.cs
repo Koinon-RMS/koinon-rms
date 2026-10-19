@@ -619,16 +619,62 @@ public class AuthorizedPickupService(
         string? pickupPersonName,
         CancellationToken ct)
     {
-        return await context.AuthorizedPickups
+        if (pickupPersonId.HasValue)
+        {
+            return await context.AuthorizedPickups
+                .AsNoTracking()
+                .Include(p => p.AuthorizedPerson)
+                .FirstOrDefaultAsync(p =>
+                    p.ChildPersonId == childId &&
+                    p.IsActive &&
+                    p.AuthorizedPersonId == pickupPersonId.Value,
+                    ct);
+        }
+
+        // Kiosk path (#710): only a typed name arrives. It must match name-only rows AND
+        // person-linked rows (Name is NULL; every auto-populated adult is one) by the linked
+        // person's first or nick name plus last name. When several rows match, the most
+        // restrictive level wins, so a person blocked with Never is never offered an override.
+        var typed = NormalizePickupName(pickupPersonName);
+        if (typed.Length == 0)
+        {
+            return null;
+        }
+
+        var candidates = await context.AuthorizedPickups
             .AsNoTracking()
             .Include(p => p.AuthorizedPerson)
-            .FirstOrDefaultAsync(p =>
-                p.ChildPersonId == childId &&
-                p.IsActive &&
-                ((pickupPersonId.HasValue && p.AuthorizedPersonId == pickupPersonId.Value) ||
-                 (!pickupPersonId.HasValue && p.Name == pickupPersonName)),
-                ct);
+            .Where(p => p.ChildPersonId == childId && p.IsActive)
+            .ToListAsync(ct);
+
+        var matches = candidates.Where(p => PickupNames(p).Contains(typed)).ToList();
+
+        return matches.FirstOrDefault(p => p.AuthorizationLevel == Domain.Enums.AuthorizationLevel.Never)
+            ?? matches.FirstOrDefault(p => p.AuthorizationLevel == Domain.Enums.AuthorizationLevel.EmergencyOnly)
+            ?? matches.FirstOrDefault();
     }
+
+    private static IEnumerable<string> PickupNames(AuthorizedPickup pickup)
+    {
+        if (!string.IsNullOrWhiteSpace(pickup.Name))
+        {
+            yield return NormalizePickupName(pickup.Name);
+        }
+
+        var person = pickup.AuthorizedPerson;
+        if (person != null)
+        {
+            yield return NormalizePickupName($"{person.FirstName} {person.LastName}");
+            if (!string.IsNullOrWhiteSpace(person.NickName))
+            {
+                yield return NormalizePickupName($"{person.NickName} {person.LastName}");
+            }
+        }
+    }
+
+    private static string NormalizePickupName(string? name) =>
+        string.Join(' ', (name ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .ToUpperInvariant();
 
     private PickupVerificationResultDto CheckAuthorizationLevel(
         AuthorizedPickup? authorizedPickup,
