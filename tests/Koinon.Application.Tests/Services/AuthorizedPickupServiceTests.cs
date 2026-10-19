@@ -143,6 +143,97 @@ public class AuthorizedPickupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyPickupAsync_ByTypedName_MatchesPersonLinkedAlwaysPickup()
+    {
+        // Arrange: a person-linked row (Name NULL), as auto-populate creates for every adult
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        // Act: the kiosk sends only a typed name, in any case and spacing
+        var result = await _service.VerifyPickupAsync(new VerifyPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "  testparent   SMITH ",
+            SecurityCode: attendance.AttendanceCode!.Code!));
+
+        // Assert
+        Assert.True(result.IsAuthorized);
+        Assert.Equal(AuthorizationLevel.Always, result.AuthorizationLevel);
+        Assert.False(result.RequiresSupervisorOverride);
+    }
+
+    [Fact]
+    public async Task VerifyPickupAsync_ByTypedName_PersonLinkedNeverIsHardDeny()
+    {
+        // Arrange
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Other,
+            AuthorizationLevel = AuthorizationLevel.Never,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _service.VerifyPickupAsync(new VerifyPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "TestParent Smith",
+            SecurityCode: attendance.AttendanceCode!.Code!));
+
+        // Assert: the blocked person gets the hard deny, never the override path
+        Assert.False(result.IsAuthorized);
+        Assert.Equal(AuthorizationLevel.Never, result.AuthorizationLevel);
+        Assert.False(result.RequiresSupervisorOverride);
+    }
+
+    [Fact]
+    public async Task VerifyPickupAsync_ByTypedName_NeverWinsOverAnotherMatchingRow()
+    {
+        // Arrange: a name-only Always row and a person-linked Never row for the same name
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            Name = "TestParent Smith",
+            Relationship = PickupRelationship.Friend,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        });
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Other,
+            AuthorizationLevel = AuthorizationLevel.Never,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _service.VerifyPickupAsync(new VerifyPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "TestParent Smith",
+            SecurityCode: attendance.AttendanceCode!.Code!));
+
+        // Assert: the most restrictive level decides
+        Assert.False(result.IsAuthorized);
+        Assert.Equal(AuthorizationLevel.Never, result.AuthorizationLevel);
+    }
+
+    [Fact]
     public async Task RecordPickupAsync_WhenNeverAuthorizationLevel_ThrowsInvalidOperationException()
     {
         // Arrange
