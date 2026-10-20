@@ -156,6 +156,7 @@ export function PickupVerification({
         wasAuthorized: verificationResult.isAuthorized,
         authorizedPickupIdKey: verificationResult.authorizedPickupIdKey,
         supervisorOverride,
+        securityCode: enteredSecurityCode,
         sessionToken,
         notes: 'Supervisor override recorded at kiosk.',
       };
@@ -166,6 +167,7 @@ export function PickupVerification({
         wasAuthorized: verificationResult.isAuthorized,
         authorizedPickupIdKey: verificationResult.authorizedPickupIdKey,
         supervisorOverride,
+        securityCode: enteredSecurityCode,
       };
     }
 

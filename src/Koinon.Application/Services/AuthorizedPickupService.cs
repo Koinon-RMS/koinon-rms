@@ -339,12 +339,25 @@ public class AuthorizedPickupService(
             authorizedPickupId,
             ct);
 
+        // CRITICAL (#710): the server decides. record-pickup is kiosk-device-authorized, so
+        // the client's WasAuthorized, SupervisorOverride and AuthorizedPickupIdKey are claims,
+        // not facts: re-verify the security code and the authorization exactly as
+        // verify-pickup does, and refuse any claim the server's own result does not support.
+        var authorizedPickup = await ReverifyPickupClaimAsync(
+            request,
+            attendance,
+            attendanceId,
+            child,
+            pickupPersonId,
+            authorizedPickupId,
+            ct);
+
         var log = CreatePickupLogEntry(
             request,
             attendanceId,
             child.Id,
             pickupPersonId,
-            authorizedPickupId,
+            authorizedPickup?.Id,
             supervisorPersonId);
 
         context.PickupLogs.Add(log);
@@ -785,6 +798,7 @@ public class AuthorizedPickupService(
             .AsTracking()
             .Include(a => a.PersonAlias)
             .ThenInclude(pa => pa!.Person)
+            .Include(a => a.AttendanceCode)
             .FirstOrDefaultAsync(a => a.Id == attendanceId, ct);
     }
 
@@ -890,6 +904,49 @@ public class AuthorizedPickupService(
             throw new InvalidOperationException(
                 "Cannot override pickup for a blocked person. This person is on the 'Never' list.");
         }
+    }
+
+    private async Task<AuthorizedPickup?> ReverifyPickupClaimAsync(
+        RecordPickupRequest request,
+        Attendance attendance,
+        int attendanceId,
+        Person child,
+        int? pickupPersonId,
+        int? claimedAuthorizedPickupId,
+        CancellationToken ct)
+    {
+        if (VerifySecurityCode(attendance, request.SecurityCode, attendanceId) != null)
+        {
+            throw new InvalidOperationException(
+                "The security code does not match this attendance; the pickup cannot be recorded.");
+        }
+
+        var authorizedPickup = await FindAuthorizedPickupAsync(
+            child.Id,
+            pickupPersonId,
+            request.PickupPersonName,
+            ct);
+        var verification = CheckAuthorizationLevel(authorizedPickup, child, request.PickupPersonName);
+
+        if (request.WasAuthorized && !verification.IsAuthorized)
+        {
+            throw new InvalidOperationException(
+                "The pickup person is not authorized for this child; the pickup cannot be recorded as authorized.");
+        }
+
+        if (request.SupervisorOverride && !verification.RequiresSupervisorOverride)
+        {
+            throw new InvalidOperationException(
+                "A supervisor override is not allowed for this pickup person.");
+        }
+
+        if (claimedAuthorizedPickupId.HasValue && claimedAuthorizedPickupId != authorizedPickup?.Id)
+        {
+            throw new InvalidOperationException(
+                "The authorized pickup does not match the server's verification for this child.");
+        }
+
+        return authorizedPickup;
     }
 
     private PickupLog CreatePickupLogEntry(
