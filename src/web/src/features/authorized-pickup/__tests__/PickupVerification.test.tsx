@@ -169,6 +169,7 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
       wasAuthorized: true,
       supervisorOverride: false,
       authorizedPickupIdKey: 'ap1',
+      securityCode: '4321',
     });
     // #710 ruling: the client NEVER sends a supervisor identity field.
     expect(payload).not.toHaveProperty('supervisorPersonIdKey');

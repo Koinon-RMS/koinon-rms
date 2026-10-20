@@ -346,7 +346,10 @@ public class AuthorizedPickupServiceTests : IDisposable
             SupervisorOverride: true,
             SupervisorPersonIdKey: supervisor.IdKey,
             Notes: "Supervisor approved emergency pickup"
-        );
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
 
         // Act
         var result = await _service.RecordPickupAsync(request);
@@ -823,7 +826,10 @@ public class AuthorizedPickupServiceTests : IDisposable
             SupervisorOverride: false,
             SupervisorPersonIdKey: null,
             Notes: "Normal pickup"
-        );
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
 
         // Act
         var result = await _service.RecordPickupAsync(request);
@@ -870,7 +876,10 @@ public class AuthorizedPickupServiceTests : IDisposable
             SupervisorOverride: false,
             SupervisorPersonIdKey: null,
             Notes: "Normal pickup"
-        );
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
 
         // Act
         await _service.RecordPickupAsync(request);
@@ -881,6 +890,72 @@ public class AuthorizedPickupServiceTests : IDisposable
             .AsNoTracking()
             .FirstAsync(a => a.Id == attendance.Id);
         Assert.NotNull(storedAttendance.EndDateTime);
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_WithWrongSecurityCode_ThrowsAndRecordsNothing()
+    {
+        // Arrange: an Always-authorized guardian, but the code typed at the kiosk is wrong
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        var authorizedPickup = new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        };
+        _context.AuthorizedPickups.Add(authorizedPickup);
+        await _context.SaveChangesAsync();
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: authorizedPerson.IdKey,
+            PickupPersonName: null,
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: authorizedPickup.IdKey,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null
+        )
+        {
+            SecurityCode = "WRONG1"
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.RecordPickupAsync(request));
+        Assert.False(await _context.PickupLogs.AnyAsync(pl => pl.AttendanceId == attendance.Id));
+        var storedAttendance = await _context.Attendances
+            .AsNoTracking()
+            .FirstAsync(a => a.Id == attendance.Id);
+        Assert.Null(storedAttendance.EndDateTime);
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_ClaimingAuthorizedForUnlistedPerson_ThrowsAndRecordsNothing()
+    {
+        // Arrange: nobody is on the child's list; a client skips verify-pickup and claims authorized
+        var (_, _, attendance) = await SetupTestDataAsync();
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "Anyone At All",
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: null,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.RecordPickupAsync(request));
+        Assert.False(await _context.PickupLogs.AnyAsync(pl => pl.AttendanceId == attendance.Id));
     }
 
     [Fact]

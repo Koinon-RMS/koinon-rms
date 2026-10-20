@@ -48,4 +48,11 @@ public record RecordPickupRequest(
     bool SupervisorOverride,
     string? SupervisorPersonIdKey,
     string? Notes
-);
+)
+{
+    /// <summary>
+    /// The child's security code as entered at the kiosk. record-pickup re-runs the
+    /// verify-pickup checks with it and never trusts WasAuthorized from the client (#710).
+    /// </summary>
+    public string? SecurityCode { get; init; }
+}
