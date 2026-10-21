@@ -143,6 +143,22 @@ describe('CheckoutFlow — list step', () => {
     expect(screen.getByText('Alice')).toBeInTheDocument();
     expect(screen.queryByText('Bob')).toBeNull();
   });
+
+  it('filters by an uppercase alphanumeric security code', async () => {
+    const user = userEvent.setup();
+    render(
+      <CheckoutFlow
+        currentAttendance={[
+          attend({ attendanceIdKey: 'A', personName: 'Alice', securityCode: 'A7KQ' }),
+          attend({ attendanceIdKey: 'B', personName: 'Bob', securityCode: 'B2M9' }),
+        ]}
+        onCheckout={vi.fn()}
+      />,
+    );
+    await user.type(screen.getByPlaceholderText(/search by name/i), 'A7KQ');
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.queryByText('Bob')).toBeNull();
+  });
 });
 
 describe('CheckoutFlow — verification step (#710)', () => {
