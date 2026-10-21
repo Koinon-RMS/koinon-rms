@@ -170,4 +170,6 @@ export interface RecordPickupRequest {
   supervisorPersonIdKey?: IdKey;
   /** Additional notes about the pickup */
   notes?: string;
+  /** The security code typed at the kiosk; record-pickup re-verifies with it (#710) */
+  securityCode?: string;
 }
