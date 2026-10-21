@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-07-08T10:11:37-04:00",
+  "generated_at": "2026-10-21T10:35:06-04:00",
   "entities": {
     "Attendance": {
       "name": "Attendance",
@@ -3731,7 +3731,8 @@
         "AuthorizedPickupIdKey": "string?",
         "SupervisorOverride": "bool",
         "SupervisorPersonIdKey": "string?",
-        "Notes": "string?"
+        "Notes": "string?",
+        "SecurityCode": "string?"
       },
       "linked_entity": "PickupLog"
     },
@@ -4940,7 +4941,7 @@
         },
         {
           "name": "RecordPickupAsync",
-          "return_type": "Task<PickupLogDto>",
+          "return_type": "Task<Result<PickupLogDto>>",
           "is_async": false
         },
         {
@@ -9628,6 +9629,7 @@
       },
       "dependencies": [
         "IAuthorizedPickupService",
+        "ISupervisorModeService",
         "ILogger<PickupController>"
       ]
     },
@@ -11412,6 +11414,11 @@
       "relationship": "depends_on"
     },
     {
+      "source": "PickupController",
+      "target": "ISupervisorModeService",
+      "relationship": "depends_on"
+    },
+    {
       "source": "PublicGroupsController",
       "target": "IPublicGroupService",
       "relationship": "depends_on"
@@ -12857,6 +12864,6 @@
     "total_dtos": 239,
     "total_services": 117,
     "total_controllers": 40,
-    "total_relationships": 550
+    "total_relationships": 551
   }
 }

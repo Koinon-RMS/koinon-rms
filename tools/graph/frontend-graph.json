@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generated_at": "2026-07-08T14:25:56.314Z",
+  "generated_at": "2026-10-21T15:17:12.883Z",
   "types": {
     "DefinedTypeSummary": {
       "name": "DefinedTypeSummary",
@@ -177,7 +177,8 @@
         "authorizedPickupIdKey": "IdKey",
         "supervisorOverride": "boolean",
         "supervisorPersonIdKey": "IdKey",
-        "notes": "string"
+        "notes": "string",
+        "securityCode": "string"
       },
       "path": "types/authorized-pickup.ts"
     },
