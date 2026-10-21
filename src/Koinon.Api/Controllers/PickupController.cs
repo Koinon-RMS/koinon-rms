@@ -84,6 +84,8 @@ public class PickupController(
     /// <response code="400">Validation failed</response>
     /// <response code="401">Missing or invalid kiosk authentication</response>
     /// <response code="403">Supervisor override without a valid supervisor session</response>
+    /// <response code="404">Attendance not found</response>
+    /// <response code="422">Pickup refused by a business rule: a blocked person, a wrong security code, or a claim the server's verification does not support</response>
     [HttpPost("record-pickup")]
     [AllowAnonymous]
     [KioskAuthorize]
@@ -91,6 +93,8 @@ public class PickupController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> RecordPickup(
         [FromBody] RecordPickupRequest request,
         CancellationToken ct = default)
@@ -142,7 +146,41 @@ public class PickupController(
             }
         }
 
-        var pickupLog = await authorizedPickupService.RecordPickupAsync(effectiveRequest, ct);
+        var result = await authorizedPickupService.RecordPickupAsync(effectiveRequest, ct);
+
+        if (result.IsFailure)
+        {
+            logger.LogWarning(
+                "Pickup refused: AttendanceIdKey={AttendanceIdKey}, Code={Code}, Message={Message}",
+                effectiveRequest.AttendanceIdKey, result.Error!.Code, result.Error.Message);
+
+            return result.Error.Code switch
+            {
+                "NOT_FOUND" => NotFound(new ProblemDetails
+                {
+                    Title = "Attendance not found",
+                    Detail = result.Error.Message,
+                    Status = StatusCodes.Status404NotFound,
+                    Instance = HttpContext.Request.Path
+                }),
+                "VALIDATION_ERROR" => BadRequest(new ProblemDetails
+                {
+                    Title = "Invalid request",
+                    Detail = result.Error.Message,
+                    Status = StatusCodes.Status400BadRequest,
+                    Instance = HttpContext.Request.Path
+                }),
+                _ => UnprocessableEntity(new ProblemDetails
+                {
+                    Title = result.Error.Code,
+                    Detail = result.Error.Message,
+                    Status = StatusCodes.Status422UnprocessableEntity,
+                    Instance = HttpContext.Request.Path
+                })
+            };
+        }
+
+        var pickupLog = result.Value!;
 
         logger.LogInformation(
             "Pickup recorded: AttendanceIdKey={AttendanceIdKey}, PickupPerson={PickupPerson}, WasAuthorized={WasAuthorized}, SupervisorOverride={SupervisorOverride}, SupervisorPersonIdKey={SupervisorPersonIdKey}",

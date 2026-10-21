@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Claims;
 using FluentAssertions;
 using Koinon.Api.Controllers;
+using Koinon.Application.Common;
 using Koinon.Application.DTOs;
 using Koinon.Application.DTOs.Requests;
 using Koinon.Application.Interfaces;
@@ -142,7 +143,7 @@ public class PickupControllerTests
 
         _authorizedPickupServiceMock
             .Setup(s => s.RecordPickupAsync(It.IsAny<RecordPickupRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreatePickupLog());
+            .ReturnsAsync(Result<PickupLogDto>.Success(CreatePickupLog()));
 
         // Act
         var result = await kioskController.RecordPickup(request);
@@ -188,7 +189,7 @@ public class PickupControllerTests
         _authorizedPickupServiceMock
             .Setup(s => s.RecordPickupAsync(It.IsAny<RecordPickupRequest>(), It.IsAny<CancellationToken>()))
             .Callback<RecordPickupRequest, CancellationToken>((r, _) => captured = r)
-            .ReturnsAsync(CreatePickupLog(supervisorOverride: true));
+            .ReturnsAsync(Result<PickupLogDto>.Success(CreatePickupLog(supervisorOverride: true)));
 
         // Act
         var result = await kioskController.RecordPickup(request);
@@ -465,7 +466,7 @@ public class PickupControllerTests
 
         _authorizedPickupServiceMock
             .Setup(s => s.RecordPickupAsync(request, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreatePickupLog());
+            .ReturnsAsync(Result<PickupLogDto>.Success(CreatePickupLog()));
 
         // Act
         var result = await _controller.RecordPickup(request);
@@ -503,6 +504,95 @@ public class PickupControllerTests
         var problemDetails = badRequestResult.Value.Should().BeOfType<ProblemDetails>().Subject;
         problemDetails.Title.Should().Be("Invalid request");
         problemDetails.Detail.Should().Contain("AttendanceIdKey is required");
+    }
+
+    [Fact]
+    public async Task RecordPickup_WhenServerVerificationRefusesTheClaim_Returns422()
+    {
+        // Arrange — the service's own re-verification refuses the claim (#710)
+        var kioskController = CreateKioskController(sessionToken: null);
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: _attendanceIdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "Anyone At All",
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: null,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null);
+
+        _authorizedPickupServiceMock
+            .Setup(s => s.RecordPickupAsync(It.IsAny<RecordPickupRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PickupLogDto>.Failure(Error.UnprocessableEntity(
+                "The pickup person is not authorized for this child; the pickup cannot be recorded as authorized.")));
+
+        // Act
+        var result = await kioskController.RecordPickup(request);
+
+        // Assert — a refused pickup is a 422 ProblemDetails, not a 500
+        var unprocessable = result.Should().BeOfType<UnprocessableEntityObjectResult>().Subject;
+        var problemDetails = unprocessable.Value.Should().BeOfType<ProblemDetails>().Subject;
+        problemDetails.Status.Should().Be(StatusCodes.Status422UnprocessableEntity);
+        problemDetails.Title.Should().Be("UNPROCESSABLE_ENTITY");
+        problemDetails.Detail.Should().Contain("not authorized for this child");
+    }
+
+    [Fact]
+    public async Task RecordPickup_WhenServiceReportsAValidationError_Returns400()
+    {
+        // Arrange
+        var kioskController = CreateKioskController(sessionToken: null);
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: _attendanceIdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "Sarah Smith",
+            WasAuthorized: false,
+            AuthorizedPickupIdKey: null,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null);
+
+        _authorizedPickupServiceMock
+            .Setup(s => s.RecordPickupAsync(It.IsAny<RecordPickupRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PickupLogDto>.Failure(Error.Validation(
+                "SupervisorOverride is required when WasAuthorized is false")));
+
+        // Act
+        var result = await kioskController.RecordPickup(request);
+
+        // Assert
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var problemDetails = badRequest.Value.Should().BeOfType<ProblemDetails>().Subject;
+        problemDetails.Title.Should().Be("Invalid request");
+        problemDetails.Detail.Should().Contain("SupervisorOverride is required");
+    }
+
+    [Fact]
+    public async Task RecordPickup_WhenAttendanceIsNotFound_Returns404()
+    {
+        // Arrange
+        var kioskController = CreateKioskController(sessionToken: null);
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: _attendanceIdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "Sarah Smith",
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: null,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null);
+
+        _authorizedPickupServiceMock
+            .Setup(s => s.RecordPickupAsync(It.IsAny<RecordPickupRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PickupLogDto>.Failure(Error.NotFound("Attendance", _attendanceIdKey)));
+
+        // Act
+        var result = await kioskController.RecordPickup(request);
+
+        // Assert
+        var notFound = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        var problemDetails = notFound.Value.Should().BeOfType<ProblemDetails>().Subject;
+        problemDetails.Title.Should().Be("Attendance not found");
     }
 
     #endregion

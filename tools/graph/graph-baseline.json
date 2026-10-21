@@ -4940,7 +4940,7 @@
         },
         {
           "name": "RecordPickupAsync",
-          "return_type": "Task<PickupLogDto>",
+          "return_type": "Task<Result<PickupLogDto>>",
           "is_async": false
         },
         {
