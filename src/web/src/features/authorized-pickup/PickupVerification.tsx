@@ -176,7 +176,12 @@ export function PickupVerification({
 
       onSuccess();
     } catch (error) {
-      if (error instanceof ApiClientError && error.statusCode === 401) {
+      // 403: record-pickup refuses an override whose X-Supervisor-Session is missing,
+      // invalid or expired (PickupController.RecordPickup); the supervisor must sign in again.
+      if (
+        error instanceof ApiClientError &&
+        (error.statusCode === 401 || error.statusCode === 403)
+      ) {
         setError('Kiosk supervisor session has expired. Please re-authenticate at the kiosk.');
       } else {
         setError('Failed to record pickup. Please try again.');
