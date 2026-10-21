@@ -42,7 +42,7 @@ export function CheckoutFlow({
     const query = searchQuery.toLowerCase();
     return (
       attendance.personName.toLowerCase().includes(query) ||
-      attendance.securityCode.includes(query)
+      attendance.securityCode.toLowerCase().includes(query)
     );
   });
 
