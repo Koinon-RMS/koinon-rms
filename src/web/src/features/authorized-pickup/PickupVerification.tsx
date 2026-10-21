@@ -69,7 +69,7 @@ export function PickupVerification({
   // guardian, or an unauthorized-but-overridable one. A failed verification
   // (invalid code, attendance not found: isAuthorized=false, no level, no
   // override) must not post wasAuthorized=false/supervisorOverride=false —
-  // the server rejects that combination with a 500.
+  // the server rejects that combination with a 400.
   const canComplete =
     !!verificationResult &&
     (verificationResult.isAuthorized || verificationResult.requiresSupervisorOverride);

@@ -1,3 +1,4 @@
+using Koinon.Application.Common;
 using Koinon.Application.DTOs;
 using Koinon.Application.DTOs.Requests;
 
@@ -68,8 +69,9 @@ public interface IAuthorizedPickupService
     /// </summary>
     /// <param name="request">The pickup details to record.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The created pickup log DTO.</returns>
-    Task<PickupLogDto> RecordPickupAsync(
+    /// <returns>The created pickup log DTO, or a failure when the request is invalid, the
+    /// attendance is not found, or the server's own verification refuses the claim.</returns>
+    Task<Result<PickupLogDto>> RecordPickupAsync(
         RecordPickupRequest request,
         CancellationToken ct = default);
 
