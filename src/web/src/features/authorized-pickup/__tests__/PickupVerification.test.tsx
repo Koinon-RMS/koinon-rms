@@ -401,6 +401,32 @@ describe('PickupVerification — kiosk verification step (#710)', () => {
     expect(screen.getByRole('button', { name: /complete checkout/i })).toBeInTheDocument();
   });
 
+  it('expired supervisor session (403) on an override record shows the re-authenticate message', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    mockVerifyMutate.mockResolvedValueOnce(overrideResult);
+    mockRecordMutate.mockRejectedValueOnce(
+      new ApiClientError(
+        403,
+        { title: 'Forbidden', status: 403, detail: 'Supervisor session is invalid or expired' },
+        'problemDetails',
+      ),
+    );
+    renderAtKiosk({ onSuccess, sessionToken: 'stale-token' });
+
+    await submitVerify(user);
+    await screen.findByRole('heading', { name: /supervisor approval required/i });
+    await user.click(screen.getByLabelText(/supervisor override/i));
+    await user.click(screen.getByRole('button', { name: /complete checkout/i }));
+
+    expect(
+      await screen.findByText(/kiosk supervisor session has expired/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/failed to record pickup/i)).not.toBeInTheDocument();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mockRecordMutate).toHaveBeenCalledTimes(1);
+  });
+
   it('Enter in the name field submits verify; duplicate submit is blocked while in flight', async () => {
     const user = userEvent.setup();
     // Hold the first verify open: an unresolved promise simulates latency so a
