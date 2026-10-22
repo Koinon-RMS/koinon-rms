@@ -15,7 +15,7 @@
   <!-- API layer packages -->
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="SixLabors.ImageSharp" />
+    <PackageReference Include="SkiaSharp" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Serilog.AspNetCore" />

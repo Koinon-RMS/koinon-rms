@@ -1,6 +1,6 @@
 using FluentValidation;
 using Koinon.Application.DTOs.Files;
-using SixLabors.ImageSharp;
+using SkiaSharp;
 
 namespace Koinon.Application.Validators;
 
@@ -81,12 +81,14 @@ public class UploadFileRequestValidator : AbstractValidator<UploadFileRequest>
 
             try
             {
-                // Try to identify and decode the image using ImageSharp
+                // Try to identify the image using SkiaSharp
                 // This validates magic bytes and basic image structure
-                var imageInfo = Image.Identify(stream);
+                // disposeManagedStream false: the stream is read again after validation
+                using var skStream = new SKManagedStream(stream, false);
+                using var codec = SKCodec.Create(skStream);
 
-                // If we got here, it's a valid image format
-                return imageInfo != null;
+                // If we got a codec, it's a valid image format
+                return codec != null;
             }
             finally
             {
@@ -96,7 +98,7 @@ public class UploadFileRequestValidator : AbstractValidator<UploadFileRequest>
         }
         catch
         {
-            // If ImageSharp can't identify/decode it, it's not a valid image
+            // If SkiaSharp can't identify it, it's not a valid image
             return false;
         }
     }
