@@ -5,7 +5,7 @@ using Koinon.Domain.Data;
 using Koinon.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SixLabors.ImageSharp;
+using SkiaSharp;
 
 namespace Koinon.Application.Services;
 
@@ -51,9 +51,20 @@ public class FileService : IFileService
                 memoryStream.Position = 0; // Reset stream position
                 try
                 {
-                    using var image = await Image.LoadAsync(memoryStream, cancellationToken);
-                    width = image.Width;
-                    height = image.Height;
+                    // disposeManagedStream false: memoryStream stays owned by its using
+                    using var skStream = new SKManagedStream(memoryStream, false);
+                    using var codec = SKCodec.Create(skStream);
+                    using var image = codec == null ? null : SKBitmap.Decode(codec);
+                    if (image == null)
+                    {
+                        // Not a valid image or unsupported format - continue without dimensions
+                        _logger.LogWarning("Failed to extract image dimensions for {FileName}", request.FileName);
+                    }
+                    else
+                    {
+                        width = image.Width;
+                        height = image.Height;
+                    }
                 }
                 catch (Exception ex)
                 {
