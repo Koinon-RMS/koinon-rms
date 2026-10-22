@@ -7,7 +7,7 @@ using Koinon.Application.DTOs.Requests;
 using Koinon.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SixLabors.ImageSharp;
+using SkiaSharp;
 
 namespace Koinon.Api.Controllers;
 
@@ -645,23 +645,38 @@ public class PeopleController(
             });
         }
 
-        // BLOCKER: Validate file signature using ImageSharp (magic bytes check)
+        // BLOCKER: Validate file signature using SkiaSharp (magic bytes check)
         try
         {
             using var validationStream = file.OpenReadStream();
-            using var image = await Image.LoadAsync(validationStream, ct);
-            // If ImageSharp can load it, it's a valid image file
-            // Stream is disposed here after validation
-        }
-        catch (UnknownImageFormatException)
-        {
-            return BadRequest(new ProblemDetails
+            // disposeManagedStream false: validationStream stays owned by its using
+            using var skStream = new SKManagedStream(validationStream, false);
+            using var codec = SKCodec.Create(skStream);
+            if (codec == null)
             {
-                Title = "Validation failed",
-                Detail = "File is not a valid image. The file may be corrupted or have an incorrect extension.",
-                Status = StatusCodes.Status400BadRequest,
-                Instance = HttpContext.Request.Path
-            });
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Validation failed",
+                    Detail = "File is not a valid image. The file may be corrupted or have an incorrect extension.",
+                    Status = StatusCodes.Status400BadRequest,
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            using var image = SKBitmap.Decode(codec);
+            if (image == null)
+            {
+                logger.LogWarning("Image validation failed for file: {FileName}", file.FileName);
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Validation failed",
+                    Detail = "Unable to process the image file",
+                    Status = StatusCodes.Status400BadRequest,
+                    Instance = HttpContext.Request.Path
+                });
+            }
+            // If SkiaSharp can decode it, it's a valid image file
+            // Stream is disposed here after validation
         }
         catch (Exception ex)
         {

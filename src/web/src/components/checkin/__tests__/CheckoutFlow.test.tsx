@@ -1,22 +1,51 @@
 /**
  * CheckoutFlow tests
  *
+ * Issue #710: the kiosk checkout verify step runs PickupVerification (server-
+ * verified guardian check + pickup audit log) instead of the legacy
+ * client-side-only SecurityCodeVerify code compare.
+ *
  * Catches:
  *  - Empty list message depends on whether a search query is active.
- *  - Search filters by person name.
- *  - Search filters by security code.
+ *  - Search filters by person name / security code.
  *  - Security code display is partially masked (first 2 digits + dots).
  *  - "First Time" badge appears when flag is set.
- *  - Clicking Check Out advances to the verify step (renders SecurityCodeVerify).
+ *  - Clicking Check Out advances to the verification step and renders
+ *    PickupVerification for the selected attendance.
  *  - Cancel from verify step returns to list.
- *  - Successful onCheckout → success screen → Continue returns to list.
- *  - onCheckout failure → error banner on list.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { CheckoutFlow } from '../CheckoutFlow';
 import type { AttendanceResultDto } from '@/services/api/types';
+
+// The verify step must render the shared kiosk verification component; its
+// internals are covered by PickupVerification.test.tsx. Here we pin the mount
+// contract: which props it receives.
+vi.mock('@/features/authorized-pickup/PickupVerification', () => ({
+  PickupVerification: ({
+    attendanceIdKey,
+    childName,
+    sessionToken,
+    onSuccess,
+    onCancel,
+  }: {
+    attendanceIdKey: string;
+    childName: string;
+    sessionToken?: string;
+    onSuccess: () => void;
+    onCancel: () => void;
+  }) => (
+    <div data-testid="pickup-verification-stub">
+      <span data-testid="pv-attendance">{attendanceIdKey}</span>
+      <span data-testid="pv-child">{childName}</span>
+      <span data-testid="pv-session">{sessionToken ?? 'none'}</span>
+      <button onClick={onSuccess}>stub-complete</button>
+      <button onClick={onCancel}>stub-cancel</button>
+    </div>
+  ),
+}));
 
 function attend(overrides: Partial<AttendanceResultDto> = {}): AttendanceResultDto {
   return {
@@ -33,7 +62,13 @@ function attend(overrides: Partial<AttendanceResultDto> = {}): AttendanceResultD
   };
 }
 
-describe('CheckoutFlow', () => {
+async function openVerifyStep(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /check out/i }));
+  // Wait for the verification step to mount.
+  await screen.findByTestId('pickup-verification-stub');
+}
+
+describe('CheckoutFlow — list step', () => {
   it('shows the empty-no-search message when there is nothing to check out', () => {
     render(<CheckoutFlow currentAttendance={[]} onCheckout={vi.fn()} />);
     expect(screen.getByText(/no one is currently checked in/i)).toBeInTheDocument();
@@ -109,64 +144,69 @@ describe('CheckoutFlow', () => {
     expect(screen.queryByText('Bob')).toBeNull();
   });
 
-  it('advances to the verify step when Check Out is clicked', async () => {
+  it('filters by an uppercase alphanumeric security code', async () => {
+    const user = userEvent.setup();
+    render(
+      <CheckoutFlow
+        currentAttendance={[
+          attend({ attendanceIdKey: 'A', personName: 'Alice', securityCode: 'A7KQ' }),
+          attend({ attendanceIdKey: 'B', personName: 'Bob', securityCode: 'B2M9' }),
+        ]}
+        onCheckout={vi.fn()}
+      />,
+    );
+    await user.type(screen.getByPlaceholderText(/search by name/i), 'A7KQ');
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.queryByText('Bob')).toBeNull();
+  });
+});
+
+describe('CheckoutFlow — verification step (#710)', () => {
+  it('mounts PickupVerification with the attendance, child name and kiosk session', async () => {
     const user = userEvent.setup();
     render(
       <CheckoutFlow
         currentAttendance={[attend({ personName: 'Billy Smith' })]}
         onCheckout={vi.fn()}
+        sessionToken="sess-token-9"
       />,
     );
-    await user.click(screen.getByRole('button', { name: /check out/i }));
-    // Verify step renders the security code heading.
-    expect(screen.getByText(/verify security code/i)).toBeInTheDocument();
-    expect(screen.getByText('Billy Smith')).toBeInTheDocument();
+
+    await openVerifyStep(user);
+
+    expect(screen.getByTestId('pv-attendance')).toHaveTextContent('ATT1');
+    expect(screen.getByTestId('pv-child')).toHaveTextContent('Billy Smith');
+    expect(screen.getByTestId('pv-session')).toHaveTextContent('sess-token-9');
   });
 
-  it('returns to list when the verify step is cancelled', async () => {
+  it('authorized completion shows the success screen and does NOT call the plain checkout endpoint', async () => {
     const user = userEvent.setup();
+    const onCheckout = vi.fn();
     render(
       <CheckoutFlow
         currentAttendance={[attend()]}
-        onCheckout={vi.fn()}
+        onCheckout={onCheckout}
+        sessionToken="sess-token-9"
       />,
     );
-    await user.click(screen.getByRole('button', { name: /check out/i }));
-    expect(screen.getByText(/verify security code/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getByPlaceholderText(/search by name/i)).toBeInTheDocument();
+
+    await openVerifyStep(user);
+    await user.click(screen.getByRole('button', { name: 'stub-complete' }));
+
+    expect(onCheckout).not.toHaveBeenCalled();
+
+    expect(await screen.findByText(/checkout complete/i)).toBeInTheDocument();
   });
 
-  it('shows success screen when the correct code completes checkout', async () => {
-    vi.useFakeTimers();
-    const onCheckout = vi.fn().mockResolvedValue(undefined);
-
+  it('returns to list when the verification step is cancelled', async () => {
+    const user = userEvent.setup();
     render(
-      <CheckoutFlow
-        currentAttendance={[attend({ personName: 'Billy', securityCode: '1234' })]}
-        onCheckout={onCheckout}
-      />,
+      <CheckoutFlow currentAttendance={[attend()]} onCheckout={vi.fn()} />,
     );
 
-    // Click Check Out button via fireEvent (synchronous, plays well with timers).
-    fireEvent.click(screen.getByRole('button', { name: /check out/i }));
+    await openVerifyStep(user);
+    await user.click(screen.getByRole('button', { name: 'stub-cancel' }));
 
-    // Now in verify; enter correct digits.
-    fireEvent.click(screen.getByRole('button', { name: '1' }));
-    fireEvent.click(screen.getByRole('button', { name: '2' }));
-    fireEvent.click(screen.getByRole('button', { name: '3' }));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-
-    // Advance constant-time delay + microtasks for the async onCheckout.
-    await act(async () => {
-      vi.advanceTimersByTime(200);
-      // Flush pending promises.
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(onCheckout).toHaveBeenCalledWith('ATT1');
-    expect(screen.getByText(/checkout complete/i)).toBeInTheDocument();
-    vi.useRealTimers();
+    expect(screen.getByPlaceholderText(/search by name/i)).toBeInTheDocument();
   });
 });

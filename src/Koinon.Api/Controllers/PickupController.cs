@@ -1,3 +1,4 @@
+using Koinon.Api.Attributes;
 using Koinon.Api.Filters;
 using Koinon.Application.DTOs;
 using Koinon.Application.DTOs.Requests;
@@ -17,6 +18,7 @@ namespace Koinon.Api.Controllers;
 [ValidateIdKey]
 public class PickupController(
     IAuthorizedPickupService authorizedPickupService,
+    ISupervisorModeService supervisorModeService,
     ILogger<PickupController> logger) : ControllerBase
 {
     /// <summary>
@@ -30,14 +32,13 @@ public class PickupController(
     /// <returns>Verification result with authorization status</returns>
     /// <response code="200">Returns verification result (authorized or not)</response>
     /// <response code="400">Validation failed</response>
-    /// <response code="401">Not authenticated</response>
-    /// <response code="403">Requires CheckInVolunteer or Supervisor role</response>
+    /// <response code="401">Missing or invalid kiosk authentication</response>
     [HttpPost("verify-pickup")]
-    [Authorize(Roles = "CheckInVolunteer,Supervisor")]
+    [AllowAnonymous]
+    [KioskAuthorize]
     [ProducesResponseType(typeof(PickupVerificationResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> VerifyPickup(
         [FromBody] VerifyPickupRequest request,
         CancellationToken ct = default)
@@ -81,14 +82,19 @@ public class PickupController(
     /// <returns>Created pickup log entry</returns>
     /// <response code="201">Pickup recorded successfully</response>
     /// <response code="400">Validation failed</response>
-    /// <response code="401">Not authenticated</response>
-    /// <response code="403">Requires CheckInVolunteer or Supervisor role</response>
+    /// <response code="401">Missing or invalid kiosk authentication</response>
+    /// <response code="403">Supervisor override without a valid supervisor session</response>
+    /// <response code="404">Attendance not found</response>
+    /// <response code="422">Pickup refused by a business rule: a blocked person, a wrong security code, or a claim the server's verification does not support</response>
     [HttpPost("record-pickup")]
-    [Authorize(Roles = "CheckInVolunteer,Supervisor")]
+    [AllowAnonymous]
+    [KioskAuthorize]
     [ProducesResponseType(typeof(PickupLogDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> RecordPickup(
         [FromBody] RecordPickupRequest request,
         CancellationToken ct = default)
@@ -104,26 +110,85 @@ public class PickupController(
             });
         }
 
-        // CRITICAL #3: Verify supervisor role if supervisor override is requested
+        // CRITICAL #3 (#710): a supervisor override must establish the
+        // supervisor's identity server-side. JWT supervisors (admin path)
+        // keep their client-supplied SupervisorPersonIdKey; a kiosk derives
+        // the supervisor from the X-Supervisor-Session header and never
+        // trusts a client-supplied identity.
+        var effectiveRequest = request;
         if (request.SupervisorOverride)
         {
-            if (!User.IsInRole("Supervisor"))
+            if (User.IsInRole("Supervisor"))
             {
-                return Problem(
-                    detail: "Supervisor override requires a user with Supervisor role",
-                    statusCode: StatusCodes.Status403Forbidden,
-                    title: "Forbidden");
+                // JWT supervisor (admin path): keep the client-supplied SupervisorPersonIdKey
+            }
+            else
+            {
+                if (!HttpContext.Request.Headers.TryGetValue("X-Supervisor-Session", out var sessionToken) ||
+                    string.IsNullOrWhiteSpace(sessionToken))
+                {
+                    return Problem(
+                        detail: "Supervisor override requires an active supervisor session",
+                        statusCode: StatusCodes.Status403Forbidden,
+                        title: "Forbidden");
+                }
+
+                var supervisor = await supervisorModeService.ValidateSessionAsync(sessionToken.ToString(), ct);
+                if (supervisor is null)
+                {
+                    return Problem(
+                        detail: "Supervisor session is invalid or expired",
+                        statusCode: StatusCodes.Status403Forbidden,
+                        title: "Forbidden");
+                }
+
+                effectiveRequest = request with { SupervisorPersonIdKey = supervisor.IdKey };
             }
         }
 
-        var pickupLog = await authorizedPickupService.RecordPickupAsync(request, ct);
+        var result = await authorizedPickupService.RecordPickupAsync(effectiveRequest, ct);
+
+        if (result.IsFailure)
+        {
+            logger.LogWarning(
+                "Pickup refused: AttendanceIdKey={AttendanceIdKey}, Code={Code}, Message={Message}",
+                effectiveRequest.AttendanceIdKey, result.Error!.Code, result.Error.Message);
+
+            return result.Error.Code switch
+            {
+                "NOT_FOUND" => NotFound(new ProblemDetails
+                {
+                    Title = "Attendance not found",
+                    Detail = result.Error.Message,
+                    Status = StatusCodes.Status404NotFound,
+                    Instance = HttpContext.Request.Path
+                }),
+                "VALIDATION_ERROR" => BadRequest(new ProblemDetails
+                {
+                    Title = "Invalid request",
+                    Detail = result.Error.Message,
+                    Status = StatusCodes.Status400BadRequest,
+                    Instance = HttpContext.Request.Path
+                }),
+                _ => UnprocessableEntity(new ProblemDetails
+                {
+                    Title = result.Error.Code,
+                    Detail = result.Error.Message,
+                    Status = StatusCodes.Status422UnprocessableEntity,
+                    Instance = HttpContext.Request.Path
+                })
+            };
+        }
+
+        var pickupLog = result.Value!;
 
         logger.LogInformation(
-            "Pickup recorded: AttendanceIdKey={AttendanceIdKey}, PickupPerson={PickupPerson}, WasAuthorized={WasAuthorized}, SupervisorOverride={SupervisorOverride}",
-            request.AttendanceIdKey,
-            request.PickupPersonName ?? "Unknown",
-            request.WasAuthorized,
-            request.SupervisorOverride);
+            "Pickup recorded: AttendanceIdKey={AttendanceIdKey}, PickupPerson={PickupPerson}, WasAuthorized={WasAuthorized}, SupervisorOverride={SupervisorOverride}, SupervisorPersonIdKey={SupervisorPersonIdKey}",
+            effectiveRequest.AttendanceIdKey,
+            effectiveRequest.PickupPersonName ?? "Unknown",
+            effectiveRequest.WasAuthorized,
+            effectiveRequest.SupervisorOverride,
+            effectiveRequest.SupervisorPersonIdKey ?? "none");
 
         return CreatedAtAction(
             nameof(GetPickupHistory),

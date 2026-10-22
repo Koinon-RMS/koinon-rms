@@ -11,6 +11,8 @@ export interface SupervisorModeProps {
   onCheckout: (attendanceIdKey: string) => Promise<void>;
   onExit: () => void;
   printLabel?: (labels: LabelDto[]) => Promise<void>;
+  sessionToken?: string;
+  onPickupRecorded?: (attendanceIdKey: string) => void;
 }
 
 type TabType = 'reprint' | 'checkout' | 'pager';
@@ -25,6 +27,8 @@ export function SupervisorMode({
   onCheckout,
   onExit,
   printLabel,
+  sessionToken,
+  onPickupRecorded,
 }: SupervisorModeProps) {
   const [activeTab, setActiveTab] = useState<TabType>('reprint');
   const [reprintingId, setReprintingId] = useState<string | null>(null);
@@ -179,6 +183,8 @@ export function SupervisorMode({
         <CheckoutFlow
           currentAttendance={currentAttendance}
           onCheckout={onCheckout}
+          sessionToken={sessionToken}
+          onPickupRecorded={onPickupRecorded}
         />
       )}
 
