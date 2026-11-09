@@ -47,7 +47,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine
+        FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine
         WORKDIR /app
         COPY . .
         RUN dotnet tool install --global dotnet-ef
@@ -74,7 +74,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine
+        FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine
         WORKDIR /app
         COPY . .
         RUN dotnet build tools/TestData/TestData.csproj
