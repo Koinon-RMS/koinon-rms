@@ -45,7 +45,7 @@ public class CampusServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<CampusMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         // Setup validators

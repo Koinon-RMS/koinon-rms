@@ -45,7 +45,7 @@ public class AuditServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<AuditMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         // Setup mocks

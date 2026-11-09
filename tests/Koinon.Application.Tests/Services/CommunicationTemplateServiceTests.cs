@@ -48,7 +48,7 @@ public class CommunicationTemplateServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<CommunicationTemplateMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         _mockMergeFieldService = new Mock<IMergeFieldService>();

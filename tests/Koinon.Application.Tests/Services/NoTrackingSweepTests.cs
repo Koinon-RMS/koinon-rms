@@ -95,7 +95,7 @@ public class NoTrackingSweepTests
         userCtx.Setup(x => x.IsAuthenticated).Returns(true);
         userCtx.Setup(x => x.CanAccessPerson(1)).Returns(true);
 
-        var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile<PersonMappingProfile>());
+        var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile<PersonMappingProfile>(), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         var service = new PersonService(
             context,
             mapperConfig.CreateMapper(),
@@ -166,7 +166,7 @@ public class NoTrackingSweepTests
         userCtx.Setup(x => x.CanAccessPerson(It.IsAny<int>())).Returns(true);
         userCtx.Setup(x => x.IsInRole(It.IsAny<string>())).Returns(true);
 
-        var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile<FamilyMappingProfile>());
+        var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile<FamilyMappingProfile>(), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         var createFamilyValidator = new Mock<IValidator<CreateFamilyRequest>>();
         createFamilyValidator
             .Setup(v => v.ValidateAsync(It.IsAny<CreateFamilyRequest>(), It.IsAny<CancellationToken>()))
@@ -264,7 +264,7 @@ public class NoTrackingSweepTests
             .Setup(v => v.ValidateAsync(It.IsAny<UpdateGroupRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ValidationResult());
 
-        var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile<GroupMappingProfile>());
+        var mapperConfig = new MapperConfiguration(cfg => cfg.AddProfile<GroupMappingProfile>(), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
 
         var service = new GroupService(
             context,

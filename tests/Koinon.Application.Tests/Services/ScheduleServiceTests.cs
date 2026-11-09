@@ -30,7 +30,7 @@ public class ScheduleServiceTests : IAsyncLifetime
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<ScheduleMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         // Create validators

@@ -46,7 +46,7 @@ public class DeviceServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<DeviceMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         _createValidator = new CreateDeviceRequestValidator();

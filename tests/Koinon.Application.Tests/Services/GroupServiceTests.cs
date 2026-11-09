@@ -48,7 +48,7 @@ public class GroupServiceTests : IDisposable
         {
             cfg.AddProfile<GroupMappingProfile>();
             cfg.AddProfile<PersonMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         // Setup validators

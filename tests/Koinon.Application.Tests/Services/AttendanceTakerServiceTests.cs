@@ -231,7 +231,7 @@ public class AttendanceTakerServiceTests : IDisposable
 
         // Assert
         Assert.Equal(3, roster.Count);
-        Assert.Single(roster.Where(r => r.IsAttending));
+        Assert.Single(roster, r => r.IsAttending);
         Assert.Equal(2, roster.Count(r => !r.IsAttending));
 
         var attendedMember = roster.First(r => r.IsAttending);
