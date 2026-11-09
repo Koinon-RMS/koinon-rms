@@ -23,9 +23,9 @@ namespace Koinon.Infrastructure.Tests;
 public class AuthorizedPickupSeederTests
 {
     // Same fixed GUIDs the seeder uses for the Smith family.
-    private static readonly Guid SmithFamilyGuid = new("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid JaneSmithGuid = new("44444444-4444-4444-4444-444444444444");
-    private static readonly Guid JohnnySmithGuid = new("55555555-5555-5555-5555-555555555555");
+    private static readonly Guid _smithFamilyGuid = new("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid _janeSmithGuid = new("44444444-4444-4444-4444-444444444444");
+    private static readonly Guid _johnnySmithGuid = new("55555555-5555-5555-5555-555555555555");
 
     [Fact]
     public async Task SeedAuthorizedPickupAsync_persists_exactly_one_active_parent_always_row()
@@ -64,9 +64,9 @@ public class AuthorizedPickupSeederTests
                 row.ChildPersonId.Should().Be(johnnyId);
                 row.AuthorizedPersonId.Should().Be(janeId);
                 row.ChildPerson.Should().NotBeNull();
-                row.ChildPerson!.Guid.Should().Be(JohnnySmithGuid);
+                row.ChildPerson!.Guid.Should().Be(_johnnySmithGuid);
                 row.AuthorizedPerson.Should().NotBeNull();
-                row.AuthorizedPerson!.Guid.Should().Be(JaneSmithGuid);
+                row.AuthorizedPerson!.Guid.Should().Be(_janeSmithGuid);
             }
         }
         finally
@@ -224,7 +224,7 @@ public class AuthorizedPickupSeederTests
     {
         var family = new Family
         {
-            Guid = SmithFamilyGuid,
+            Guid = _smithFamilyGuid,
             Name = "Smith Family",
             IsActive = true,
             CreatedDateTime = now
@@ -233,7 +233,7 @@ public class AuthorizedPickupSeederTests
 
         var jane = new Person
         {
-            Guid = JaneSmithGuid,
+            Guid = _janeSmithGuid,
             FirstName = "Jane",
             LastName = "Smith",
             Gender = Gender.Female,
@@ -241,7 +241,7 @@ public class AuthorizedPickupSeederTests
         };
         var johnny = new Person
         {
-            Guid = JohnnySmithGuid,
+            Guid = _johnnySmithGuid,
             FirstName = "Johnny",
             LastName = "Smith",
             Gender = Gender.Male,
