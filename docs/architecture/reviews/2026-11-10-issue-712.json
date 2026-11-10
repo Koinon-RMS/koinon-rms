@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "reviewType": "architect-code-review",
+  "repository": "https://github.com/Koinon-RMS/koinon-rms",
+  "baseCommit": "9aacde67d5aac4c600663081b8dcc61c85faeb88",
+  "headCommit": "dac938e5be71725981938b33defdd8dc3dc82978",
+  "createdAt": "2026-11-10T14:56:10.754Z",
+  "change": {
+    "diffSha256": "a400c0427e5e53953ca9d50731ed64912b9ff6ed325c66b89595e34ea070054a",
+    "files": [
+      {
+        "path": ".config/dotnet-tools.json",
+        "sha256": "a7e5d83a9cdddc12c62b637f9568b18167e3140f96de359f3d322c3a8ab8b748"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "3dc63460db8a7b60a0d5d50d08d2905aa49b4dbee74f5b6797a3dc2ecf620165"
+      },
+      {
+        "path": "Directory.Build.props",
+        "sha256": "c24f55007eef2b895e2bb3f5b80fce62c0eaf95cc383062bbf8a02e53b0c6122"
+      },
+      {
+        "path": "Directory.Packages.props",
+        "sha256": "cb41e5fcb6f09208cee216e9156c53542063b7e56a4795ed3aaac25034e79cd1"
+      },
+      {
+        "path": "docker-compose.test.yml",
+        "sha256": "7ed27f9deb05549f8345c8b8ec139b9d31af8a068f0a429a6f34f33eabdb13cb"
+      },
+      {
+        "path": "global.json",
+        "sha256": "e2964c7bbca510c42e808462851c2a34e9895a7d91977d44fba0e53004d6356c"
+      },
+      {
+        "path": "src/Koinon.Api/Controllers/PeopleController.cs",
+        "sha256": "de2da9d1fdcbe5b5af153466af19b1ed2b745e1da07d857f484b75e0a003f367"
+      },
+      {
+        "path": "src/Koinon.Api/Dockerfile",
+        "sha256": "4bab508839ff3c7b8c78b51f8122452336ad6935f26a3c67277fbfc997c286aa"
+      },
+      {
+        "path": "src/Koinon.Api/Koinon.Api.csproj",
+        "sha256": "609ef6ce85daad289ddbd811965e5153d36be444327fd8acb9050c8e06317321"
+      },
+      {
+        "path": "src/Koinon.Application/Extensions/ServiceCollectionExtensions.cs",
+        "sha256": "dccb779a877d414d67d7d63b242d59ded3508b7d678a3264daf86850e3f33ebe"
+      },
+      {
+        "path": "src/Koinon.Application/Koinon.Application.csproj",
+        "sha256": "4bda889f349c09d37aac63f21530f29bea9467340cd4ad6e2e4dce0737f582ed"
+      },
+      {
+        "path": "src/Koinon.Application/Services/FileService.cs",
+        "sha256": "5d9020556a5790bc55469deb23d272d5d95496d42163115e804bd49faf4af95a"
+      },
+      {
+        "path": "src/Koinon.Application/Validators/UploadFileRequestValidator.cs",
+        "sha256": "75b1333cb7405e18d8721d6626d90a3ec36987066bf13d06c4904efde6ac0903"
+      },
+      {
+        "path": "src/web/Dockerfile",
+        "sha256": "46fb68ef42515498b930ba5f09097cd39cfb9520fa4af9f88c17d4cc197650c3"
+      },
+      {
+        "path": "tests/Koinon.Api.ContractTests/Koinon.Api.ContractTests.csproj",
+        "sha256": "57563561d80d174620d7737a2a7a76f8aedfd77e6a7401f948c6410bc34ef23e"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/AttendanceTakerServiceTests.cs",
+        "sha256": "942a4c34607b2e175aa54917e7966e43a4dc52bacc706a3ac0ecbae7a2884b4b"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/AuditServiceTests.cs",
+        "sha256": "6c4d125f5dc9136e66a44fff1af58372a086c96ea8015eeb7e8557be96107585"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/CampusServiceTests.cs",
+        "sha256": "1308be1916288e564aa5e72dd39468ce1db57cbe126053424fc5444d20078854"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/CommunicationTemplateServiceTests.cs",
+        "sha256": "7b4e93268e6761fbe0bb17b1de808495fb0720a121294ac4302bded9975d1bfe"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/DefinedTypeServiceTests.cs",
+        "sha256": "7b8c6c50ac60263f18d4fd9c3d7251598f4d6ff117c08a551a7aa03910d12bd2"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/DeviceServiceTests.cs",
+        "sha256": "6ca0f19883074d5dc446e291a4c5942d1a44e759854b284c8cde60a0d6a1ea69"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/FamilyServiceTests.cs",
+        "sha256": "3657740f06ef335e92d627232d80d22779de25a50e78b4ee661729e2048aa2ac"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/GroupMemberRequestServiceTests.cs",
+        "sha256": "88cc6ef0d4aa17ca120765552926b0e98d35a962edae43cd2a6f9af22a3aafa0"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/GroupServiceTests.cs",
+        "sha256": "41e704b5acf3a235e490d1103a9d15bdd8de61af80161db9d54769f01575c6eb"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/LabelGenerationServiceTests.cs",
+        "sha256": "5a235385404241f7a75f5b5298553cad700060dc9ab867615b8f1e2f2246d507"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/LocationServiceTests.cs",
+        "sha256": "321819709d9b7cd012f8612218ec0f5b3b98f566ff937ec303160eebb0e403dd"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/NoTrackingSweepTests.cs",
+        "sha256": "2358d77098e2f7d513297545a07f0e2d813ae44ec7e7f40e4233cee6fcbee848"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/PersonServiceTests.cs",
+        "sha256": "764899b57112ce3f6c5d6bb83bd976392c38a74044b050a658300dc5dab935c6"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/Reporting/ReportGeneratorTests.cs",
+        "sha256": "795d3ef2e3e0c5b9e4c3ced54d605c8359c131f303879b2295f8611ea0919b9d"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/ScheduleServiceTests.cs",
+        "sha256": "8eadc71b6886a91706d1263e291561825a0effd4b336a86d96b6e57e1fdb63aa"
+      },
+      {
+        "path": "tools/Koinon.TestDataSeeder/Koinon.TestDataSeeder.csproj",
+        "sha256": "bc5326b88f02b01ae4bb0a0f928f60ff9733a8408253ceef40f28094ca970c70"
+      },
+      {
+        "path": "tools/TestData/TestData.csproj",
+        "sha256": "6d1ccde15f4b8bff2ec75b922e79b8d227e1b7bc3985b9b1482c2d64023242ad"
+      },
+      {
+        "path": "tools/graph/backend-graph.json",
+        "sha256": "6bb4331ad3eec8c38d724ac5c87e57fa349f0fea4ad33386ade0034c0ec0d04e"
+      },
+      {
+        "path": "tools/graph/frontend-graph.json",
+        "sha256": "4c2e851c4bfc3d2150f39495b9aca4e3fd7d11d89e37ee45ce57e51701a1aa66"
+      },
+      {
+        "path": "tools/graph/graph-baseline.json",
+        "sha256": "4b9dedcfa295b2257c60c8e9b676ec6118de2040d454fecd0c36acc48b16cc3d"
+      },
+      {
+        "path": "tools/print-bridge/Koinon.PrintBridge.Tests/Koinon.PrintBridge.Tests.csproj",
+        "sha256": "b705a647c98cdf933d925669dfea3f2408a5c9536836323f8475ca73ed54b96a"
+      },
+      {
+        "path": "tools/print-bridge/Koinon.PrintBridge/Koinon.PrintBridge.csproj",
+        "sha256": "1197967fcf019cd791ccb684dc8a5f108bf1a7ed8fc13332c810aa0f75fbda6f"
+      }
+    ]
+  },
+  "architectRuling": {
+    "ruling": "APPROVED",
+    "reasons": [
+      {
+        "standard": "docs/reference/conventions.md § Data",
+        "finding": "The proposal correctly applies `.AsTracking()` to the refresh-token loads in `AuthService.RefreshTokenAsync` and `LogoutAsync`, directly complying with the mandate that every query loading an entity for mutation must explicitly opt-in to tracking under the global `NoTracking` default."
+      },
+      {
+        "standard": "docs/reference/conventions.md § Infrastructure / build",
+        "finding": "Repairing `docker-compose.test.yml` to include PostGIS and JWT test configuration aligns with the infrastructure convention requiring PostGIS-enabled Postgres images and consistent config keys across compose files."
+      },
+      {
+        "standard": "docs/reference/api-contracts.md § POST /api/v1/auth/logout",
+        "finding": "The fix ensures the logout endpoint actually persists revocation state, satisfying the contract that the endpoint invalidates the refresh token and returns 204."
+      }
+    ],
+    "conditions": []
+  },
+  "impact": {
+    "semantic": {
+      "standardsRetrieved": [
+        {
+          "path": "docs/reference/conventions.md"
+        },
+        {
+          "path": "docs/reference/api-contracts.md"
+        }
+      ]
+    }
+  },
+  "agentSignature": {
+    "keyId": "koinon-agent-artifact-2026-09",
+    "algorithm": "ed25519",
+    "publicKeySha256": "b063efa215b7f8cb99a5215f60f6d245bae636b65e773f7aabc680b19696bfda",
+    "signedPayloadSha256": "d45fdf4049d113e7bc684704710e8cfbf3d8ace74633e70c54a23ad3dfc0abe9",
+    "signature": "VjO+vVgES8p9/3KDLdMNZrj3I+Iu5rAMkuuFQHwu0855q516JrNC0PnZbpRC4PA2yrZ6VpSoJ9yMbugJg1ibBw=="
+  }
+}
