@@ -48,7 +48,7 @@ public class PersonServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<PersonMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         // Setup validators

@@ -7,8 +7,8 @@ on:
     branches: [ main, develop, dev ]
 
 env:
-  DOTNET_VERSION: '8.0.x'
-  NODE_VERSION: '20.x'
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22.x'
 
 jobs:
   # Backend build and test
@@ -556,7 +556,7 @@ jobs:
     - name: Seed demo data
       run: |
         docker run --rm -v "$PWD:/repo" -w /repo --network koinon_network \
-          mcr.microsoft.com/dotnet/sdk:8.0-alpine \
+          mcr.microsoft.com/dotnet/sdk:10.0-alpine \
           dotnet run --project tools/Koinon.TestDataSeeder -- seed \
           --connection "Host=postgres;Port=5432;Database=koinon;Username=koinon;Password=koinon"
 

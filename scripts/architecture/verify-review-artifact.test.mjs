@@ -47,7 +47,7 @@ function makeRepo() {
 }
 
 function diffHash(root, base, head) {
-  const diff = execFileSync('git', ['diff', '--binary', `${base}...${head}`, '--', '.', ':(exclude)docs/architecture/reviews/**'], { cwd: root });
+  const diff = execFileSync('git', ['diff', '--binary', '--full-index', `${base}...${head}`, '--', '.', ':(exclude)docs/architecture/reviews/**'], { cwd: root });
   return createHash('sha256').update(diff).digest('hex');
 }
 

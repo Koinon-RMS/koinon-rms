@@ -40,7 +40,7 @@ public class DefinedTypeServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<DefinedTypeMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         _createValidator = new CreateDefinedValueRequestValidator();

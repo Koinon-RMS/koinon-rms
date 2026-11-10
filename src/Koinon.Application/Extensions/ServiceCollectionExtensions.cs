@@ -182,8 +182,9 @@ public static class ServiceCollectionExtensions
         // Configure QuestPDF license
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
-        // AutoMapper - register all mapping profiles
-        services.AddAutoMapper(typeof(ServiceCollectionExtensions).Assembly);
+        // AutoMapper 13+ absorbed the DI extensions package; assembly registration
+        // moved behind the configuration lambda (AddMaps).
+        services.AddAutoMapper(cfg => cfg.AddMaps(typeof(ServiceCollectionExtensions).Assembly));
 
         // FluentValidation - register all validators
         services.AddValidatorsFromAssembly(typeof(ServiceCollectionExtensions).Assembly);

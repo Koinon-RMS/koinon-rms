@@ -7,7 +7,7 @@ services:
   # Test PostgreSQL Database (isolated from dev)
   # =============================================================================
   postgres-test:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.5-alpine
     container_name: koinon-postgres-test
     environment:
       POSTGRES_USER: koinon
@@ -47,11 +47,11 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine
+        FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine
         WORKDIR /app
         COPY . .
-        RUN dotnet tool install --global dotnet-ef
-        ENV PATH="/root/.dotnet/tools:${PATH}"
+        RUN dotnet tool restore
+        RUN dotnet restore src/Koinon.Api/Koinon.Api.csproj
         ENTRYPOINT ["dotnet", "ef"]
     container_name: koinon-migrate-test
     environment:
@@ -74,7 +74,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine
+        FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine
         WORKDIR /app
         COPY . .
         RUN dotnet build tools/TestData/TestData.csproj
@@ -98,12 +98,14 @@ services:
     build:
       context: .
       dockerfile: src/Koinon.Api/Dockerfile
-      target: development
     container_name: koinon-api-test
     environment:
       ASPNETCORE_ENVIRONMENT: Testing
       ConnectionStrings__DefaultConnection: "Host=postgres-test;Port=5432;Database=koinon_test;Username=koinon;Password=koinon_test"
       ConnectionStrings__Redis: "redis-test:6379"
+      Jwt__Secret: development-secret-key-at-least-32-characters-long-for-dev-only
+      Jwt__Issuer: koinon
+      Jwt__Audience: koinon
     ports:
       - "5001:8080"
     depends_on:

@@ -4,7 +4,7 @@
 # projects to the solution don't break or slow the image build.
 
 # Stage 1: Build
-FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 
 WORKDIR /src
 
@@ -33,7 +33,7 @@ COPY ["src/Koinon.Api/", "src/Koinon.Api/"]
 RUN dotnet publish src/Koinon.Api/Koinon.Api.csproj -c Release -o /app/publish
 
 # Stage 2: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 
 WORKDIR /app
 

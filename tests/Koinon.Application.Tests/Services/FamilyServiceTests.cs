@@ -50,7 +50,7 @@ public class FamilyServiceTests : IDisposable
         {
             cfg.AddProfile<PersonMappingProfile>();
             cfg.AddProfile<FamilyMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = mapperConfig.CreateMapper();
 
         // Setup validators

@@ -206,7 +206,7 @@ public class ReportGeneratorTests
         // Check for PK zip header (XLSX is a zip file)
         result.Stream.Position = 0;
         var header = new byte[2];
-        await result.Stream.ReadAsync(header, 0, 2);
+        await result.Stream.ReadExactlyAsync(header, 0, 2);
         header.Should().BeEquivalentTo(new byte[] { 0x50, 0x4B }); // "PK"
     }
 
@@ -348,7 +348,7 @@ public class ReportGeneratorTests
         // Check for PK zip header
         result.Stream.Position = 0;
         var header = new byte[2];
-        await result.Stream.ReadAsync(header, 0, 2);
+        await result.Stream.ReadExactlyAsync(header, 0, 2);
         header.Should().BeEquivalentTo(new byte[] { 0x50, 0x4B });
     }
 
@@ -489,7 +489,7 @@ public class ReportGeneratorTests
         // Check for PK zip header
         result.Stream.Position = 0;
         var header = new byte[2];
-        await result.Stream.ReadAsync(header, 0, 2);
+        await result.Stream.ReadExactlyAsync(header, 0, 2);
         header.Should().BeEquivalentTo(new byte[] { 0x50, 0x4B });
     }
 

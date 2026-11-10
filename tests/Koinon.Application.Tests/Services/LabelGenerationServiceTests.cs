@@ -40,7 +40,7 @@ public class LabelGenerationServiceTests : IDisposable
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.AddProfile<Koinon.Application.Mapping.LabelMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mockMapper = new Mock<IMapper>();
         _mockMapper.Setup(m => m.ConfigurationProvider).Returns(mapperConfig);
 
