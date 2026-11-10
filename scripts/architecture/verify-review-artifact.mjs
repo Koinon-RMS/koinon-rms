@@ -102,7 +102,7 @@ function changedFileHash(root, rel, status) {
 }
 
 function computeDiffSha(root, base, head) {
-  return sha256Hex(gitBuffer(root, ['diff', '--binary', `${base}...${head}`, '--', '.', REVIEW_EXCLUDE]));
+  return sha256Hex(gitBuffer(root, ['diff', '--binary', '--full-index', `${base}...${head}`, '--', '.', REVIEW_EXCLUDE]));
 }
 
 function loadTrustedSigners(root, signersFile = DEFAULT_SIGNERS_FILE, trustRef = TRUST_REF) {
