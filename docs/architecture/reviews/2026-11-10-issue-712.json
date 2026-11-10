@@ -3,10 +3,10 @@
   "reviewType": "architect-code-review",
   "repository": "https://github.com/Koinon-RMS/koinon-rms",
   "baseCommit": "9aacde67d5aac4c600663081b8dcc61c85faeb88",
-  "headCommit": "dac938e5be71725981938b33defdd8dc3dc82978",
-  "createdAt": "2026-11-10T14:56:10.754Z",
+  "headCommit": "8b68aa857fdb62641a058cbcf695ed24f9c63141",
+  "createdAt": "2026-11-10T16:22:37.661Z",
   "change": {
-    "diffSha256": "a400c0427e5e53953ca9d50731ed64912b9ff6ed325c66b89595e34ea070054a",
+    "diffSha256": "951a95679396d85de6b8c1b699b3800277aa3972998c74093d8267bb16b10576",
     "files": [
       {
         "path": ".config/dotnet-tools.json",
@@ -33,6 +33,14 @@
         "sha256": "e2964c7bbca510c42e808462851c2a34e9895a7d91977d44fba0e53004d6356c"
       },
       {
+        "path": "scripts/architecture/verify-review-artifact.mjs",
+        "sha256": "a6bab4248b6f094392b08e059e6ddb287e16d7684c25810fc8f02c2833165fba"
+      },
+      {
+        "path": "scripts/architecture/verify-review-artifact.test.mjs",
+        "sha256": "4fe131e1176d25f3a9ef275940a740385a554aac1912039cca0e07468e7da76b"
+      },
+      {
         "path": "src/Koinon.Api/Controllers/PeopleController.cs",
         "sha256": "de2da9d1fdcbe5b5af153466af19b1ed2b745e1da07d857f484b75e0a003f367"
       },
@@ -51,6 +59,10 @@
       {
         "path": "src/Koinon.Application/Koinon.Application.csproj",
         "sha256": "4bda889f349c09d37aac63f21530f29bea9467340cd4ad6e2e4dce0737f582ed"
+      },
+      {
+        "path": "src/Koinon.Application/Services/AuthService.cs",
+        "sha256": "6eac605f0b85cb322c27417c88d01112f6dfbc133abd70291bfa88199d6419e0"
       },
       {
         "path": "src/Koinon.Application/Services/FileService.cs",
@@ -75,6 +87,10 @@
       {
         "path": "tests/Koinon.Application.Tests/Services/AuditServiceTests.cs",
         "sha256": "6c4d125f5dc9136e66a44fff1af58372a086c96ea8015eeb7e8557be96107585"
+      },
+      {
+        "path": "tests/Koinon.Application.Tests/Services/AuthServiceRevocationTests.cs",
+        "sha256": "f536573e5ef7db86b9db240d93acae058fe861c66c463f29636ea20de6e5f8e7"
       },
       {
         "path": "tests/Koinon.Application.Tests/Services/CampusServiceTests.cs",
@@ -163,15 +179,19 @@
     "reasons": [
       {
         "standard": "docs/reference/conventions.md § Data",
-        "finding": "The proposal correctly applies `.AsTracking()` to the refresh-token loads in `AuthService.RefreshTokenAsync` and `LogoutAsync`, directly complying with the mandate that every query loading an entity for mutation must explicitly opt-in to tracking under the global `NoTracking` default."
+        "finding": "Proposal correctly applies .AsTracking() to refresh-token loads, strictly adhering to the convention that any query loading an entity for mutation must explicitly opt-in to tracking under the global NoTracking default to prevent silent SaveChanges drops."
       },
       {
-        "standard": "docs/reference/conventions.md § Infrastructure / build",
-        "finding": "Repairing `docker-compose.test.yml` to include PostGIS and JWT test configuration aligns with the infrastructure convention requiring PostGIS-enabled Postgres images and consistent config keys across compose files."
+        "standard": "docs/reference/conventions.md § Process",
+        "finding": "Security-critical revocation fix and corresponding unit tests are implemented in-change, complying with the mandate that security and missing tests are never deferred as tech debt."
       },
       {
         "standard": "docs/reference/api-contracts.md § POST /api/v1/auth/logout",
-        "finding": "The fix ensures the logout endpoint actually persists revocation state, satisfying the contract that the endpoint invalidates the refresh token and returns 204."
+        "finding": "Fix ensures the logout endpoint actually persists RevokedAt/RevokedByIp server-side, fulfilling the contract to invalidate the refresh token rather than acting as a silent no-op."
+      },
+      {
+        "standard": "docs/reference/api-contracts.md § POST /api/v1/auth/refresh",
+        "finding": "Fix ensures token rotation persists RevokedAt and ReplacedByToken, fulfilling the contract to issue a new access token while securely invalidating the previous refresh token."
       }
     ],
     "conditions": []
@@ -192,7 +212,7 @@
     "keyId": "koinon-agent-artifact-2026-09",
     "algorithm": "ed25519",
     "publicKeySha256": "b063efa215b7f8cb99a5215f60f6d245bae636b65e773f7aabc680b19696bfda",
-    "signedPayloadSha256": "d45fdf4049d113e7bc684704710e8cfbf3d8ace74633e70c54a23ad3dfc0abe9",
-    "signature": "VjO+vVgES8p9/3KDLdMNZrj3I+Iu5rAMkuuFQHwu0855q516JrNC0PnZbpRC4PA2yrZ6VpSoJ9yMbugJg1ibBw=="
+    "signedPayloadSha256": "00a90c3bec09f744fc5662438a0ca6296df47a3e5b6d6c2c483338c62c04321d",
+    "signature": "Xk6mD+c0SdpEqauQRN2B14G8elXqWD5o69nDV3p3gZGiYBP6hOMPqQauhLwU59sEND+OCgLqK/gqvdXJzw3AAA=="
   }
 }
