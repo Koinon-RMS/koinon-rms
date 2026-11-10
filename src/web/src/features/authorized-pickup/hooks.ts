@@ -138,14 +138,24 @@ export function useVerifyPickup() {
 }
 
 /**
- * Record a pickup event
+ * Record a pickup event.
+ *
+ * Kiosk flow (#710): the optional kiosk supervisor session token travels
+ * separately from the request DTO — the hook strips it from the payload and
+ * forwards it as its own argument so the api layer sends it as the
+ * `X-Supervisor-Session` header. The token is never serialized into JSON.
  */
 export function useRecordPickup() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: RecordPickupRequest) =>
-      authorizedPickupApi.recordPickup(request),
+    mutationFn: ({
+      sessionToken,
+      ...request
+    }: RecordPickupRequest & { sessionToken?: string }) =>
+      sessionToken === undefined
+        ? authorizedPickupApi.recordPickup(request)
+        : authorizedPickupApi.recordPickup(request, sessionToken),
     onSuccess: () => {
       // Invalidate all history queries since we can't know which child
       queryClient.invalidateQueries({

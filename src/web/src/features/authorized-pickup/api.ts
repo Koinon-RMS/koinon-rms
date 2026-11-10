@@ -94,6 +94,8 @@ export interface RecordPickupRequest {
   supervisorOverride: boolean;
   supervisorPersonIdKey?: IdKey;
   notes?: string;
+  /** The security code typed at the kiosk; record-pickup re-verifies with it (#710). */
+  securityCode?: string;
 }
 
 // ============================================================================
@@ -177,15 +179,26 @@ export async function verifyPickup(
 }
 
 /**
- * Record a pickup event and checkout the child
+ * Record a pickup event and checkout the child.
+ *
+ * Kiosk flow (#710): an optional supervisor session token is sent as the
+ * `X-Supervisor-Session` header — never serialized into the request body —
+ * so the backend derives the supervisor identity server-side (see
+ * services/api/checkin.ts supervisorLogout/supervisorReprint precedent).
  */
 export async function recordPickup(
-  request: RecordPickupRequest
+  request: RecordPickupRequest,
+  sessionToken?: string
 ): Promise<PickupLog> {
-  const response = await post<Envelope<PickupLog>>(
-    '/checkin/record-pickup',
-    request
-  );
+  const response = sessionToken
+    ? await post<Envelope<PickupLog>>(
+        '/checkin/record-pickup',
+        request,
+        {
+          headers: { 'X-Supervisor-Session': sessionToken },
+        }
+      )
+    : await post<Envelope<PickupLog>>('/checkin/record-pickup', request);
   return response.data;
 }
 

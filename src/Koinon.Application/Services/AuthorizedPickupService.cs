@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Koinon.Application.Common;
 using Koinon.Application.DTOs;
 using Koinon.Application.DTOs.Requests;
 using Koinon.Application.Interfaces;
@@ -302,56 +303,101 @@ public class AuthorizedPickupService(
         return CheckAuthorizationLevel(authorizedPickup, child, request.PickupPersonName);
     }
 
-    public async Task<PickupLogDto> RecordPickupAsync(
+    public async Task<Result<PickupLogDto>> RecordPickupAsync(
         RecordPickupRequest request,
         CancellationToken ct = default)
     {
-        ValidateRecordPickupRequest(request);
+        var requestCheck = ValidateRecordPickupRequest(request);
+        if (requestCheck.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(requestCheck.Error!);
+        }
 
         if (!IdKeyHelper.TryDecode(request.AttendanceIdKey, out int attendanceId))
         {
-            throw new ArgumentException(
-                $"Invalid attendance IdKey: {request.AttendanceIdKey}",
-                nameof(request));
+            return Result<PickupLogDto>.Failure(
+                Error.Validation($"Invalid attendance IdKey: {request.AttendanceIdKey}"));
         }
 
         var attendance = await GetAttendanceForPickupAsync(attendanceId, ct);
         if (attendance?.PersonAlias?.Person == null)
         {
-            throw new ArgumentException(
-                $"Attendance with IdKey {request.AttendanceIdKey} not found",
-                nameof(request));
+            return Result<PickupLogDto>.Failure(
+                Error.NotFound("Attendance", request.AttendanceIdKey));
         }
 
         var child = attendance.PersonAlias.Person;
-        var pickupPersonId = DecodePickupPersonIdKeyOrNull(request.PickupPersonIdKey);
-        var authorizedPickupId = await ValidateAuthorizedPickupIdAsync(
+        var pickupPersonIdResult = DecodePickupPersonIdKeyOrNull(request.PickupPersonIdKey);
+        if (pickupPersonIdResult.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(pickupPersonIdResult.Error!);
+        }
+
+        var pickupPersonId = pickupPersonIdResult.Value;
+        var authorizedPickupIdResult = await ValidateAuthorizedPickupIdAsync(
             request.AuthorizedPickupIdKey,
             ct);
+        if (authorizedPickupIdResult.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(authorizedPickupIdResult.Error!);
+        }
 
-        var supervisorPersonId = DecodeSupervisorPersonIdKey(request.SupervisorPersonIdKey);
-        ValidateSupervisorOverride(request, supervisorPersonId);
+        var authorizedPickupId = authorizedPickupIdResult.Value;
+        var supervisorPersonIdResult = DecodeSupervisorPersonIdKey(request.SupervisorPersonIdKey);
+        if (supervisorPersonIdResult.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(supervisorPersonIdResult.Error!);
+        }
 
-        await ValidateAuthorizedPickupBlocking(
+        var supervisorPersonId = supervisorPersonIdResult.Value;
+        var overrideCheck = ValidateSupervisorOverride(request, supervisorPersonId);
+        if (overrideCheck.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(overrideCheck.Error!);
+        }
+
+        var blockingCheck = await ValidateAuthorizedPickupBlocking(
             request,
             child.Id,
             pickupPersonId,
             authorizedPickupId,
             ct);
+        if (blockingCheck.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(blockingCheck.Error!);
+        }
+
+        // CRITICAL (#710): the server decides. record-pickup is kiosk-device-authorized, so
+        // the client's WasAuthorized, SupervisorOverride and AuthorizedPickupIdKey are claims,
+        // not facts: re-verify the security code and the authorization exactly as
+        // verify-pickup does, and refuse any claim the server's own result does not support.
+        var reverification = await ReverifyPickupClaimAsync(
+            request,
+            attendance,
+            attendanceId,
+            child,
+            pickupPersonId,
+            authorizedPickupId,
+            ct);
+        if (reverification.IsFailure)
+        {
+            return Result<PickupLogDto>.Failure(reverification.Error!);
+        }
 
         var log = CreatePickupLogEntry(
             request,
             attendanceId,
             child.Id,
             pickupPersonId,
-            authorizedPickupId,
+            reverification.Value?.Id,
             supervisorPersonId);
 
         context.PickupLogs.Add(log);
         attendance.EndDateTime = DateTime.UtcNow;
         await context.SaveChangesAsync(ct);
 
-        return await BuildPickupLogDtoAsync(log.Id, request.AttendanceIdKey, child.Id, ct);
+        return Result<PickupLogDto>.Success(
+            await BuildPickupLogDtoAsync(log.Id, request.AttendanceIdKey, child.Id, ct));
     }
 
     public async Task<List<PickupLogDto>> GetPickupHistoryAsync(
@@ -619,16 +665,62 @@ public class AuthorizedPickupService(
         string? pickupPersonName,
         CancellationToken ct)
     {
-        return await context.AuthorizedPickups
+        if (pickupPersonId.HasValue)
+        {
+            return await context.AuthorizedPickups
+                .AsNoTracking()
+                .Include(p => p.AuthorizedPerson)
+                .FirstOrDefaultAsync(p =>
+                    p.ChildPersonId == childId &&
+                    p.IsActive &&
+                    p.AuthorizedPersonId == pickupPersonId.Value,
+                    ct);
+        }
+
+        // Kiosk path (#710): only a typed name arrives. It must match name-only rows AND
+        // person-linked rows (Name is NULL; every auto-populated adult is one) by the linked
+        // person's first or nick name plus last name. When several rows match, the most
+        // restrictive level wins, so a person blocked with Never is never offered an override.
+        var typed = NormalizePickupName(pickupPersonName);
+        if (typed.Length == 0)
+        {
+            return null;
+        }
+
+        var candidates = await context.AuthorizedPickups
             .AsNoTracking()
             .Include(p => p.AuthorizedPerson)
-            .FirstOrDefaultAsync(p =>
-                p.ChildPersonId == childId &&
-                p.IsActive &&
-                ((pickupPersonId.HasValue && p.AuthorizedPersonId == pickupPersonId.Value) ||
-                 (!pickupPersonId.HasValue && p.Name == pickupPersonName)),
-                ct);
+            .Where(p => p.ChildPersonId == childId && p.IsActive)
+            .ToListAsync(ct);
+
+        var matches = candidates.Where(p => PickupNames(p).Contains(typed)).ToList();
+
+        return matches.FirstOrDefault(p => p.AuthorizationLevel == Domain.Enums.AuthorizationLevel.Never)
+            ?? matches.FirstOrDefault(p => p.AuthorizationLevel == Domain.Enums.AuthorizationLevel.EmergencyOnly)
+            ?? matches.FirstOrDefault();
     }
+
+    private static IEnumerable<string> PickupNames(AuthorizedPickup pickup)
+    {
+        if (!string.IsNullOrWhiteSpace(pickup.Name))
+        {
+            yield return NormalizePickupName(pickup.Name);
+        }
+
+        var person = pickup.AuthorizedPerson;
+        if (person != null)
+        {
+            yield return NormalizePickupName($"{person.FirstName} {person.LastName}");
+            if (!string.IsNullOrWhiteSpace(person.NickName))
+            {
+                yield return NormalizePickupName($"{person.NickName} {person.LastName}");
+            }
+        }
+    }
+
+    private static string NormalizePickupName(string? name) =>
+        string.Join(' ', (name ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .ToUpperInvariant();
 
     private PickupVerificationResultDto CheckAuthorizationLevel(
         AuthorizedPickup? authorizedPickup,
@@ -712,23 +804,23 @@ public class AuthorizedPickupService(
 
     #region Private Helper Methods - Recording
 
-    private void ValidateRecordPickupRequest(RecordPickupRequest request)
+    private Result ValidateRecordPickupRequest(RecordPickupRequest request)
     {
         // Validate supervisor override rules
         if (request.WasAuthorized && request.SupervisorOverride)
         {
-            throw new ArgumentException(
-                "SupervisorOverride must be false when WasAuthorized is true",
-                nameof(request));
+            return Result.Failure(
+                Error.Validation("SupervisorOverride must be false when WasAuthorized is true"));
         }
 
         // CRITICAL #4: Prevent unauthorized pickups without supervisor override
         if (!request.WasAuthorized && !request.SupervisorOverride)
         {
-            throw new ArgumentException(
-                "SupervisorOverride is required when WasAuthorized is false",
-                nameof(request));
+            return Result.Failure(
+                Error.Validation("SupervisorOverride is required when WasAuthorized is false"));
         }
+
+        return Result.Success();
     }
 
     private async Task<Attendance?> GetAttendanceForPickupAsync(
@@ -736,42 +828,42 @@ public class AuthorizedPickupService(
         CancellationToken ct)
     {
         return await context.Attendances
+            .AsTracking()
             .Include(a => a.PersonAlias)
             .ThenInclude(pa => pa!.Person)
+            .Include(a => a.AttendanceCode)
             .FirstOrDefaultAsync(a => a.Id == attendanceId, ct);
     }
 
-    private int? DecodePickupPersonIdKeyOrNull(string? pickupPersonIdKey)
+    private Result<int?> DecodePickupPersonIdKeyOrNull(string? pickupPersonIdKey)
     {
         if (string.IsNullOrWhiteSpace(pickupPersonIdKey))
         {
-            return null;
+            return Result<int?>.Success(null);
         }
 
         if (!IdKeyHelper.TryDecode(pickupPersonIdKey, out int personId))
         {
-            throw new ArgumentException(
-                $"Invalid pickup person IdKey: {pickupPersonIdKey}",
-                nameof(pickupPersonIdKey));
+            return Result<int?>.Failure(
+                Error.Validation($"Invalid pickup person IdKey: {pickupPersonIdKey}"));
         }
 
-        return personId;
+        return Result<int?>.Success(personId);
     }
 
-    private async Task<int?> ValidateAuthorizedPickupIdAsync(
+    private async Task<Result<int?>> ValidateAuthorizedPickupIdAsync(
         string? authorizedPickupIdKey,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(authorizedPickupIdKey))
         {
-            return null;
+            return Result<int?>.Success(null);
         }
 
         if (!IdKeyHelper.TryDecode(authorizedPickupIdKey, out int apId))
         {
-            throw new ArgumentException(
-                $"Invalid authorized pickup IdKey: {authorizedPickupIdKey}",
-                nameof(authorizedPickupIdKey));
+            return Result<int?>.Failure(
+                Error.Validation($"Invalid authorized pickup IdKey: {authorizedPickupIdKey}"));
         }
 
         // CRITICAL #1: Prevent recording pickup for "Never" authorization level
@@ -781,42 +873,42 @@ public class AuthorizedPickupService(
 
         if (authorizedPickup?.AuthorizationLevel == AuthorizationLevel.Never)
         {
-            throw new InvalidOperationException(
+            return Result<int?>.Failure(Error.UnprocessableEntity(
                 "Cannot record pickup for a person with 'Never' authorization level. " +
-                "This person is blocked from pickup and cannot be overridden.");
+                "This person is blocked from pickup and cannot be overridden."));
         }
 
-        return apId;
+        return Result<int?>.Success(apId);
     }
 
-    private int? DecodeSupervisorPersonIdKey(string? supervisorPersonIdKey)
+    private Result<int?> DecodeSupervisorPersonIdKey(string? supervisorPersonIdKey)
     {
         if (string.IsNullOrWhiteSpace(supervisorPersonIdKey))
         {
-            return null;
+            return Result<int?>.Success(null);
         }
 
         if (!IdKeyHelper.TryDecode(supervisorPersonIdKey, out int supId))
         {
-            throw new ArgumentException(
-                $"Invalid supervisor person IdKey: {supervisorPersonIdKey}",
-                nameof(supervisorPersonIdKey));
+            return Result<int?>.Failure(
+                Error.Validation($"Invalid supervisor person IdKey: {supervisorPersonIdKey}"));
         }
 
-        return supId;
+        return Result<int?>.Success(supId);
     }
 
-    private void ValidateSupervisorOverride(RecordPickupRequest request, int? supervisorPersonId)
+    private Result ValidateSupervisorOverride(RecordPickupRequest request, int? supervisorPersonId)
     {
         if (request.SupervisorOverride && !supervisorPersonId.HasValue)
         {
-            throw new ArgumentException(
-                "SupervisorPersonIdKey is required when SupervisorOverride is true",
-                nameof(request));
+            return Result.Failure(
+                Error.Validation("SupervisorPersonIdKey is required when SupervisorOverride is true"));
         }
+
+        return Result.Success();
     }
 
-    private async Task ValidateAuthorizedPickupBlocking(
+    private async Task<Result> ValidateAuthorizedPickupBlocking(
         RecordPickupRequest request,
         int childId,
         int? pickupPersonId,
@@ -826,7 +918,7 @@ public class AuthorizedPickupService(
         // CRITICAL #1: Additional check - verify supervisor override isn't for a "Never" person
         if (!request.SupervisorOverride)
         {
-            return;
+            return Result.Success();
         }
 
         var blockedPickup = await context.AuthorizedPickups
@@ -840,9 +932,54 @@ public class AuthorizedPickupService(
 
         if (blockedPickup != null)
         {
-            throw new InvalidOperationException(
-                "Cannot override pickup for a blocked person. This person is on the 'Never' list.");
+            return Result.Failure(Error.UnprocessableEntity(
+                "Cannot override pickup for a blocked person. This person is on the 'Never' list."));
         }
+
+        return Result.Success();
+    }
+
+    private async Task<Result<AuthorizedPickup?>> ReverifyPickupClaimAsync(
+        RecordPickupRequest request,
+        Attendance attendance,
+        int attendanceId,
+        Person child,
+        int? pickupPersonId,
+        int? claimedAuthorizedPickupId,
+        CancellationToken ct)
+    {
+        if (VerifySecurityCode(attendance, request.SecurityCode, attendanceId) != null)
+        {
+            return Result<AuthorizedPickup?>.Failure(Error.UnprocessableEntity(
+                "The security code does not match this attendance; the pickup cannot be recorded."));
+        }
+
+        var authorizedPickup = await FindAuthorizedPickupAsync(
+            child.Id,
+            pickupPersonId,
+            request.PickupPersonName,
+            ct);
+        var verification = CheckAuthorizationLevel(authorizedPickup, child, request.PickupPersonName);
+
+        if (request.WasAuthorized && !verification.IsAuthorized)
+        {
+            return Result<AuthorizedPickup?>.Failure(Error.UnprocessableEntity(
+                "The pickup person is not authorized for this child; the pickup cannot be recorded as authorized."));
+        }
+
+        if (request.SupervisorOverride && !verification.RequiresSupervisorOverride)
+        {
+            return Result<AuthorizedPickup?>.Failure(Error.UnprocessableEntity(
+                "A supervisor override is not allowed for this pickup person."));
+        }
+
+        if (claimedAuthorizedPickupId.HasValue && claimedAuthorizedPickupId != authorizedPickup?.Id)
+        {
+            return Result<AuthorizedPickup?>.Failure(Error.UnprocessableEntity(
+                "The authorized pickup does not match the server's verification for this child."));
+        }
+
+        return Result<AuthorizedPickup?>.Success(authorizedPickup);
     }
 
     private PickupLog CreatePickupLogEntry(

@@ -143,7 +143,98 @@ public class AuthorizedPickupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RecordPickupAsync_WhenNeverAuthorizationLevel_ThrowsInvalidOperationException()
+    public async Task VerifyPickupAsync_ByTypedName_MatchesPersonLinkedAlwaysPickup()
+    {
+        // Arrange: a person-linked row (Name NULL), as auto-populate creates for every adult
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        // Act: the kiosk sends only a typed name, in any case and spacing
+        var result = await _service.VerifyPickupAsync(new VerifyPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "  testparent   SMITH ",
+            SecurityCode: attendance.AttendanceCode!.Code!));
+
+        // Assert
+        Assert.True(result.IsAuthorized);
+        Assert.Equal(AuthorizationLevel.Always, result.AuthorizationLevel);
+        Assert.False(result.RequiresSupervisorOverride);
+    }
+
+    [Fact]
+    public async Task VerifyPickupAsync_ByTypedName_PersonLinkedNeverIsHardDeny()
+    {
+        // Arrange
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Other,
+            AuthorizationLevel = AuthorizationLevel.Never,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _service.VerifyPickupAsync(new VerifyPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "TestParent Smith",
+            SecurityCode: attendance.AttendanceCode!.Code!));
+
+        // Assert: the blocked person gets the hard deny, never the override path
+        Assert.False(result.IsAuthorized);
+        Assert.Equal(AuthorizationLevel.Never, result.AuthorizationLevel);
+        Assert.False(result.RequiresSupervisorOverride);
+    }
+
+    [Fact]
+    public async Task VerifyPickupAsync_ByTypedName_NeverWinsOverAnotherMatchingRow()
+    {
+        // Arrange: a name-only Always row and a person-linked Never row for the same name
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            Name = "TestParent Smith",
+            Relationship = PickupRelationship.Friend,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        });
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Other,
+            AuthorizationLevel = AuthorizationLevel.Never,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _service.VerifyPickupAsync(new VerifyPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "TestParent Smith",
+            SecurityCode: attendance.AttendanceCode!.Code!));
+
+        // Assert: the most restrictive level decides
+        Assert.False(result.IsAuthorized);
+        Assert.Equal(AuthorizationLevel.Never, result.AuthorizationLevel);
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_WhenNeverAuthorizationLevel_ReturnsUnprocessable()
     {
         // Arrange
         var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
@@ -170,14 +261,17 @@ public class AuthorizedPickupServiceTests : IDisposable
             Notes: null
         );
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.RecordPickupAsync(request));
-        Assert.Contains("Never", exception.Message);
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("UNPROCESSABLE_ENTITY", result.Error!.Code);
+        Assert.Contains("Never", result.Error.Message);
     }
 
     [Fact]
-    public async Task RecordPickupAsync_WhenNeverLevelWithSupervisorOverride_StillThrowsException()
+    public async Task RecordPickupAsync_WhenNeverLevelWithSupervisorOverride_StillRefused()
     {
         // Arrange
         var (child, blockedPerson, attendance) = await SetupTestDataAsync();
@@ -206,10 +300,13 @@ public class AuthorizedPickupServiceTests : IDisposable
             Notes: "Attempting to override blocked person"
         );
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.RecordPickupAsync(request));
-        Assert.Contains("blocked", exception.Message);
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("UNPROCESSABLE_ENTITY", result.Error!.Code);
+        Assert.Contains("blocked", result.Error.Message);
     }
 
     #endregion
@@ -217,7 +314,7 @@ public class AuthorizedPickupServiceTests : IDisposable
     #region Supervisor Override Tests
 
     [Fact]
-    public async Task RecordPickupAsync_WhenUnauthorizedWithoutOverride_ThrowsArgumentException()
+    public async Task RecordPickupAsync_WhenUnauthorizedWithoutOverride_ReturnsValidationError()
     {
         // Arrange
         var (child, unauthorizedPerson, attendance) = await SetupTestDataAsync();
@@ -233,10 +330,13 @@ public class AuthorizedPickupServiceTests : IDisposable
             Notes: null
         );
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.RecordPickupAsync(request));
-        Assert.Contains("SupervisorOverride is required", exception.Message);
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+        Assert.Contains("SupervisorOverride is required", result.Error.Message);
     }
 
     [Fact]
@@ -255,16 +355,20 @@ public class AuthorizedPickupServiceTests : IDisposable
             SupervisorOverride: true,
             SupervisorPersonIdKey: supervisor.IdKey,
             Notes: "Supervisor approved emergency pickup"
-        );
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
 
         // Act
         var result = await _service.RecordPickupAsync(request);
 
         // Assert
-        Assert.NotNull(result);
-        Assert.False(result.WasAuthorized);
-        Assert.True(result.SupervisorOverride);
-        Assert.NotNull(result.SupervisorName);
+        Assert.True(result.IsSuccess);
+        var recorded = result.Value!;
+        Assert.False(recorded.WasAuthorized);
+        Assert.True(recorded.SupervisorOverride);
+        Assert.NotNull(recorded.SupervisorName);
 
         // Verify attendance was updated
         var updatedAttendance = await _context.Attendances.FindAsync(attendance.Id);
@@ -272,7 +376,7 @@ public class AuthorizedPickupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RecordPickupAsync_WhenOverrideWithoutSupervisorId_ThrowsArgumentException()
+    public async Task RecordPickupAsync_WhenOverrideWithoutSupervisorId_ReturnsValidationError()
     {
         // Arrange
         var (child, unauthorizedPerson, attendance) = await SetupTestDataAsync();
@@ -288,14 +392,17 @@ public class AuthorizedPickupServiceTests : IDisposable
             Notes: null
         );
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.RecordPickupAsync(request));
-        Assert.Contains("SupervisorPersonIdKey is required", exception.Message);
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+        Assert.Contains("SupervisorPersonIdKey is required", result.Error.Message);
     }
 
     [Fact]
-    public async Task RecordPickupAsync_WhenAuthorizedWithOverride_ThrowsArgumentException()
+    public async Task RecordPickupAsync_WhenAuthorizedWithOverride_ReturnsValidationError()
     {
         // Arrange
         var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
@@ -323,10 +430,13 @@ public class AuthorizedPickupServiceTests : IDisposable
             Notes: null
         );
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.RecordPickupAsync(request));
-        Assert.Contains("SupervisorOverride must be false when WasAuthorized is true", exception.Message);
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+        Assert.Contains("SupervisorOverride must be false when WasAuthorized is true", result.Error.Message);
     }
 
     #endregion
@@ -732,22 +842,232 @@ public class AuthorizedPickupServiceTests : IDisposable
             SupervisorOverride: false,
             SupervisorPersonIdKey: null,
             Notes: "Normal pickup"
-        );
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
 
         // Act
         var result = await _service.RecordPickupAsync(request);
 
         // Assert
-        Assert.NotNull(result);
-        Assert.True(result.WasAuthorized);
-        Assert.False(result.SupervisorOverride);
-        Assert.Null(result.SupervisorName);
+        Assert.True(result.IsSuccess);
+        var recorded = result.Value!;
+        Assert.True(recorded.WasAuthorized);
+        Assert.False(recorded.SupervisorOverride);
+        Assert.Null(recorded.SupervisorName);
 
         // Verify pickup log was created
         var pickupLog = await _context.PickupLogs
             .FirstOrDefaultAsync(pl => pl.AttendanceId == attendance.Id);
         Assert.NotNull(pickupLog);
         Assert.Equal(authorizedPerson.Id, pickupLog.PickupPersonId);
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_WhenNoTrackingDefault_PersistsEndDateTime()
+    {
+        // Arrange
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+
+        var authorizedPickup = new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        };
+        _context.AuthorizedPickups.Add(authorizedPickup);
+        await _context.SaveChangesAsync();
+
+        // Mirror the production default (PostgreSqlProvider.UseQueryTrackingBehavior)
+        _context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: authorizedPerson.IdKey,
+            PickupPersonName: null,
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: authorizedPickup.IdKey,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: "Normal pickup"
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
+
+        // Act
+        await _service.RecordPickupAsync(request);
+
+        // Assert — re-read from the store with a fresh no-tracking query so we
+        // observe what was persisted, not a cached change-tracker instance
+        var storedAttendance = await _context.Attendances
+            .AsNoTracking()
+            .FirstAsync(a => a.Id == attendance.Id);
+        Assert.NotNull(storedAttendance.EndDateTime);
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_WithWrongSecurityCode_RefusesAndRecordsNothing()
+    {
+        // Arrange: an Always-authorized guardian, but the code typed at the kiosk is wrong
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        var authorizedPickup = new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        };
+        _context.AuthorizedPickups.Add(authorizedPickup);
+        await _context.SaveChangesAsync();
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: authorizedPerson.IdKey,
+            PickupPersonName: null,
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: authorizedPickup.IdKey,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null
+        )
+        {
+            SecurityCode = "WRONG1"
+        };
+
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("UNPROCESSABLE_ENTITY", result.Error!.Code);
+        Assert.False(await _context.PickupLogs.AnyAsync(pl => pl.AttendanceId == attendance.Id));
+        var storedAttendance = await _context.Attendances
+            .AsNoTracking()
+            .FirstAsync(a => a.Id == attendance.Id);
+        Assert.Null(storedAttendance.EndDateTime);
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_ClaimingAuthorizedForUnlistedPerson_RefusesAndRecordsNothing()
+    {
+        // Arrange: nobody is on the child's list; a client skips verify-pickup and claims authorized
+        var (_, _, attendance) = await SetupTestDataAsync();
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: null,
+            PickupPersonName: "Anyone At All",
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: null,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
+
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("UNPROCESSABLE_ENTITY", result.Error!.Code);
+        Assert.False(await _context.PickupLogs.AnyAsync(pl => pl.AttendanceId == attendance.Id));
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_OverrideForAnAlwaysAuthorizedPerson_RefusesAndRecordsNothing()
+    {
+        // Arrange: the server's verification authorizes this guardian outright, so an override is not allowed
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        var supervisor = await CreatePersonAsync("Supervisor", "Green");
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: authorizedPerson.IdKey,
+            PickupPersonName: null,
+            WasAuthorized: false,
+            AuthorizedPickupIdKey: null,
+            SupervisorOverride: true,
+            SupervisorPersonIdKey: supervisor.IdKey,
+            Notes: null
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
+
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("UNPROCESSABLE_ENTITY", result.Error!.Code);
+        Assert.Contains("override is not allowed", result.Error.Message);
+        Assert.False(await _context.PickupLogs.AnyAsync(pl => pl.AttendanceId == attendance.Id));
+    }
+
+    [Fact]
+    public async Task RecordPickupAsync_ClaimingAnotherPersonsAuthorizedPickup_RefusesAndRecordsNothing()
+    {
+        // Arrange: the client names one guardian but claims the authorized pickup row of another
+        var (child, authorizedPerson, attendance) = await SetupTestDataAsync();
+        var otherPerson = await CreatePersonAsync("Other", "Guardian");
+        _context.AuthorizedPickups.Add(new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = authorizedPerson.Id,
+            Relationship = PickupRelationship.Parent,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        });
+        var otherPickup = new AuthorizedPickup
+        {
+            ChildPersonId = child.Id,
+            AuthorizedPersonId = otherPerson.Id,
+            Relationship = PickupRelationship.Other,
+            AuthorizationLevel = AuthorizationLevel.Always,
+            IsActive = true
+        };
+        _context.AuthorizedPickups.Add(otherPickup);
+        await _context.SaveChangesAsync();
+
+        var request = new RecordPickupRequest(
+            AttendanceIdKey: attendance.IdKey,
+            PickupPersonIdKey: authorizedPerson.IdKey,
+            PickupPersonName: null,
+            WasAuthorized: true,
+            AuthorizedPickupIdKey: otherPickup.IdKey,
+            SupervisorOverride: false,
+            SupervisorPersonIdKey: null,
+            Notes: null
+        )
+        {
+            SecurityCode = attendance.AttendanceCode!.Code
+        };
+
+        // Act
+        var result = await _service.RecordPickupAsync(request);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("UNPROCESSABLE_ENTITY", result.Error!.Code);
+        Assert.Contains("does not match", result.Error.Message);
+        Assert.False(await _context.PickupLogs.AnyAsync(pl => pl.AttendanceId == attendance.Id));
     }
 
     [Fact]
