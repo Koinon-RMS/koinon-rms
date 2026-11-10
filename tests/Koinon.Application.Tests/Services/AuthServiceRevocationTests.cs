@@ -55,7 +55,7 @@ public class AuthServiceRevocationTests
 
     // RefreshTokenAsync validates format before any DB lookup: the token
     // must be base64 decoding to exactly 64 bytes, like real tokens are.
-    private static readonly string OldToken =
+    private static readonly string _oldToken =
         Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
 
     private static async Task<KoinonDbContext> SeedActiveTokenAsync()
@@ -73,7 +73,7 @@ public class AuthServiceRevocationTests
         context.RefreshTokens.Add(new RefreshToken
         {
             PersonId = 1,
-            Token = OldToken,
+            Token = _oldToken,
             ExpiresAt = DateTime.UtcNow.AddDays(7),
             CreatedByIp = "127.0.0.1"
         });
@@ -92,14 +92,14 @@ public class AuthServiceRevocationTests
         using var context = await SeedActiveTokenAsync();
         var service = CreateService(context);
 
-        var result = await service.RefreshTokenAsync(OldToken, "10.0.0.1");
+        var result = await service.RefreshTokenAsync(_oldToken, "10.0.0.1");
 
         result.Should().NotBeNull("the token is active and unexpired");
 
         context.ChangeTracker.Clear();
         var reloaded = await context.RefreshTokens
             .AsNoTracking()
-            .SingleAsync(rt => rt.Token == OldToken);
+            .SingleAsync(rt => rt.Token == _oldToken);
 
         reloaded.RevokedAt.Should().NotBeNull(
             "rotation must persist RevokedAt; pre-fix the mutation was silently dropped under NoTracking (issue #712).");
@@ -114,10 +114,10 @@ public class AuthServiceRevocationTests
         using var context = await SeedActiveTokenAsync();
         var service = CreateService(context);
 
-        var first = await service.RefreshTokenAsync(OldToken, "10.0.0.1");
+        var first = await service.RefreshTokenAsync(_oldToken, "10.0.0.1");
         first.Should().NotBeNull();
 
-        var second = await service.RefreshTokenAsync(OldToken, "10.0.0.2");
+        var second = await service.RefreshTokenAsync(_oldToken, "10.0.0.2");
 
         second.Should().BeNull(
             "a rotated (revoked) token must not refresh again; pre-fix the revoked state never persisted, so a stolen token stayed valid forever.");
@@ -133,14 +133,14 @@ public class AuthServiceRevocationTests
         using var context = await SeedActiveTokenAsync();
         var service = CreateService(context);
 
-        var loggedOut = await service.LogoutAsync(OldToken, "10.0.0.3");
+        var loggedOut = await service.LogoutAsync(_oldToken, "10.0.0.3");
 
         loggedOut.Should().BeTrue();
 
         context.ChangeTracker.Clear();
         var reloaded = await context.RefreshTokens
             .AsNoTracking()
-            .SingleAsync(rt => rt.Token == OldToken);
+            .SingleAsync(rt => rt.Token == _oldToken);
 
         reloaded.RevokedAt.Should().NotBeNull(
             "logout must persist RevokedAt; pre-fix logout was a silent server-side no-op (issue #712).");
@@ -153,9 +153,9 @@ public class AuthServiceRevocationTests
         using var context = await SeedActiveTokenAsync();
         var service = CreateService(context);
 
-        await service.LogoutAsync(OldToken, "10.0.0.3");
+        await service.LogoutAsync(_oldToken, "10.0.0.3");
 
-        var refresh = await service.RefreshTokenAsync(OldToken, "10.0.0.4");
+        var refresh = await service.RefreshTokenAsync(_oldToken, "10.0.0.4");
 
         refresh.Should().BeNull(
             "a logged-out token must be rejected on refresh (API surfaces this as 401).");
