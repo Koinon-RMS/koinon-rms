@@ -3,10 +3,10 @@
   "reviewType": "architect-code-review",
   "repository": "https://github.com/Koinon-RMS/koinon-rms",
   "baseCommit": "9aacde67d5aac4c600663081b8dcc61c85faeb88",
-  "headCommit": "8b68aa857fdb62641a058cbcf695ed24f9c63141",
-  "createdAt": "2026-11-10T16:22:37.661Z",
+  "headCommit": "07502cebf0e108ffc59e0ecb74f99a7e21669472",
+  "createdAt": "2026-11-10T16:36:23.028Z",
   "change": {
-    "diffSha256": "951a95679396d85de6b8c1b699b3800277aa3972998c74093d8267bb16b10576",
+    "diffSha256": "91927c17d16eaafc0ee4f889cd222cca16ff8b4ac3ef5d23f036793183298805",
     "files": [
       {
         "path": ".config/dotnet-tools.json",
@@ -90,7 +90,7 @@
       },
       {
         "path": "tests/Koinon.Application.Tests/Services/AuthServiceRevocationTests.cs",
-        "sha256": "f536573e5ef7db86b9db240d93acae058fe861c66c463f29636ea20de6e5f8e7"
+        "sha256": "6461866ee2f755dc9293e10782a109657fd8a5ca4c88dd07b1a443d0658e2fbe"
       },
       {
         "path": "tests/Koinon.Application.Tests/Services/CampusServiceTests.cs",
@@ -179,19 +179,19 @@
     "reasons": [
       {
         "standard": "docs/reference/conventions.md § Data",
-        "finding": "Proposal correctly applies .AsTracking() to refresh-token loads, strictly adhering to the convention that any query loading an entity for mutation must explicitly opt-in to tracking under the global NoTracking default to prevent silent SaveChanges drops."
+        "finding": "Explicit .AsTracking() on mutation queries correctly addresses the global NoTracking default and prevents silent mutation drops."
       },
       {
         "standard": "docs/reference/conventions.md § Process",
-        "finding": "Security-critical revocation fix and corresponding unit tests are implemented in-change, complying with the mandate that security and missing tests are never deferred as tech debt."
-      },
-      {
-        "standard": "docs/reference/api-contracts.md § POST /api/v1/auth/logout",
-        "finding": "Fix ensures the logout endpoint actually persists RevokedAt/RevokedByIp server-side, fulfilling the contract to invalidate the refresh token rather than acting as a silent no-op."
+        "finding": "Security-critical revocation fix and accompanying tests are implemented in-change, adhering to the 'never deferred' rule."
       },
       {
         "standard": "docs/reference/api-contracts.md § POST /api/v1/auth/refresh",
-        "finding": "Fix ensures token rotation persists RevokedAt and ReplacedByToken, fulfilling the contract to issue a new access token while securely invalidating the previous refresh token."
+        "finding": "Fix ensures old token revocation persists, satisfying the contract requirement that reusing a revoked token returns 401."
+      },
+      {
+        "standard": "docs/reference/api-contracts.md § POST /api/v1/auth/logout",
+        "finding": "Fix ensures logout persists revocation, satisfying the contract requirement that subsequent refresh with that token returns 401."
       }
     ],
     "conditions": []
@@ -212,7 +212,7 @@
     "keyId": "koinon-agent-artifact-2026-09",
     "algorithm": "ed25519",
     "publicKeySha256": "b063efa215b7f8cb99a5215f60f6d245bae636b65e773f7aabc680b19696bfda",
-    "signedPayloadSha256": "00a90c3bec09f744fc5662438a0ca6296df47a3e5b6d6c2c483338c62c04321d",
-    "signature": "Xk6mD+c0SdpEqauQRN2B14G8elXqWD5o69nDV3p3gZGiYBP6hOMPqQauhLwU59sEND+OCgLqK/gqvdXJzw3AAA=="
+    "signedPayloadSha256": "23b6fdcfbf7812a82a5225107de142e330a1488076795a61dc1cb89679e055df",
+    "signature": "qE0+MtiJMj6HVWb/JkPp904BYl/qjp/ZFjD72rZTDAZ6c7Cdxea+5LZSyR0s9pw3yqWEGq245Fc5QbyMrD+lCQ=="
   }
 }
