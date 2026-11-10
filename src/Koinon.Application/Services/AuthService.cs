@@ -88,8 +88,10 @@ public class AuthService(
             return null;
         }
 
-        // Find refresh token
+        // Find refresh token (AsTracking: revocation mutations must persist
+        // under the global NoTracking default — issue #712)
         var token = await context.RefreshTokens
+            .AsTracking()
             .Include(rt => rt.Person)
                 .ThenInclude(p => p!.ConnectionStatusValue)
             .Include(rt => rt.Person)
@@ -122,7 +124,10 @@ public class AuthService(
     {
         logger.LogInformation("Logout attempt");
 
+        // AsTracking: the revocation mutation must persist under the global
+        // NoTracking default — issue #712 (logout was a silent no-op)
         var token = await context.RefreshTokens
+            .AsTracking()
             .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
 
         if (token == null)
